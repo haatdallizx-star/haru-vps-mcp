@@ -14,5 +14,5 @@ PY
 if python -c 'import pytest, mcp' >/dev/null 2>&1; then
   python -m pytest
 else
-  echo "pytest_with_mcp=SKIP (install test dependencies with: pip install -e '[test]')"
+  echo "pytest_with_mcp=SKIP (install test dependencies with: pip install -e '.[test]')"
 fi
