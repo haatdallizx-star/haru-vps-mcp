@@ -50,11 +50,20 @@ pytest
 ./deploy/verify.sh
 ```
 
-Start from the non-secret example configuration:
+`deploy/haru-mcp.env.example` is a non-secret environment template. The gateway reads its process environment directly; it does **not** auto-load a `.env` file.
+
+For a local foreground run, copy/edit the template and explicitly export it into the shell before starting Haru:
 
 ```bash
 cp deploy/haru-mcp.env.example .env
+# edit .env as needed
+set -a
+. ./.env
+set +a
+haru-mcp
 ```
+
+For systemd, install the reviewed values into the `EnvironmentFile=` used by your service unit instead.
 
 By default, the gateway listens at `127.0.0.1:8765/mcp` and delegates to:
 
@@ -64,12 +73,6 @@ http://127.0.0.1:8766/servers/shell/mcp
 ```
 
 Those two endpoints are a **separate workspace-backend composition**. To build them from the selected upstream components, follow [`docs/WORKSPACE-BACKENDS.md`](docs/WORKSPACE-BACKENDS.md).
-
-Run the gateway with:
-
-```bash
-haru-mcp
-```
 
 The public tool surface is deliberately small: gateway health, workspace directory listing/read/write/edit/move/stat, and isolated shell execution delegated to the loopback backends.
 
