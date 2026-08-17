@@ -11,7 +11,7 @@ MCP client / authenticated tunnel
       Haru MCP gateway
         127.0.0.1:8765
               |
-       +------+------+ 
+       +------+------+
        |             |
        v             v
  filesystem MCP   shell MCP
