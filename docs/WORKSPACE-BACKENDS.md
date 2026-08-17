@@ -85,7 +85,6 @@ For a stricter deployment, build/package these dependencies in a separate stagin
     "filesystem": {
       "command": "/opt/haru-workspace/node/node_modules/.bin/mcp-server-filesystem",
       "args": ["/srv/haru-workspace"],
-      "cwd": "/srv/haru-workspace",
       "env": {
         "HOME": "/var/lib/haru-workspace/home",
         "PATH": "/opt/haru-workspace/node/node_modules/.bin:/usr/bin:/bin",
@@ -95,7 +94,6 @@ For a stricter deployment, build/package these dependencies in a separate stagin
     "shell": {
       "command": "/opt/haru-workspace/node/node_modules/.bin/shell-exec-mcp",
       "args": [],
-      "cwd": "/srv/haru-workspace",
       "env": {
         "HOME": "/var/lib/haru-workspace/home",
         "PATH": "/opt/haru-workspace/node/node_modules/.bin:/usr/bin:/bin",
@@ -108,6 +106,8 @@ For a stricter deployment, build/package these dependencies in a separate stagin
 
 Keep this file free of credentials. If a future backend genuinely needs a secret, inject it outside Git and review whether that backend still belongs in the same trust boundary.
 
+For the selected `mcp-proxy` 0.12.0 reference, named-server entries consume `command`, `args`, and `env`; they do not provide an effective per-server `cwd`. Named child processes inherit the **proxy process working directory**. Therefore the foreground `cd /srv/haru-workspace` and the systemd `WorkingDirectory=/srv/haru-workspace` below are the controls that establish the working directory for both named children. Do not rely on a JSON `cwd` key or the proxy CLI `--cwd` option for named servers at this version. If a future proxy version adds verified per-server working-directory support, document it only for that verified version/source.
+
 ## Start the loopback proxy
 
 A foreground canary is useful before systemd:
@@ -119,7 +119,6 @@ TMPDIR=/var/lib/haru-workspace/tmp \
 /opt/haru-workspace/proxy/bin/mcp-proxy \
   --host 127.0.0.1 \
   --port 8766 \
-  --cwd /srv/haru-workspace \
   --named-server-config /etc/haru-workspace/servers.json
 ```
 
@@ -142,7 +141,7 @@ Type=simple
 User=haru-workspace
 Group=haru-workspace
 WorkingDirectory=/srv/haru-workspace
-ExecStart=/opt/haru-workspace/proxy/bin/mcp-proxy --host 127.0.0.1 --port 8766 --cwd /srv/haru-workspace --named-server-config /etc/haru-workspace/servers.json
+ExecStart=/opt/haru-workspace/proxy/bin/mcp-proxy --host 127.0.0.1 --port 8766 --named-server-config /etc/haru-workspace/servers.json
 Restart=on-failure
 KillMode=control-group
 NoNewPrivileges=true
