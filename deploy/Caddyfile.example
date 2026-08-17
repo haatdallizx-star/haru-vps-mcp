@@ -1,0 +1,12 @@
+# Safe public default: fail closed.
+#
+# Replace this block only after placing an authentication mechanism in front of
+# the loopback Haru gateway (for example, an authenticated tunnel or an auth-
+# enforcing reverse proxy). Host/Origin checks inside Haru MCP are NOT auth.
+mcp.example.com {
+    respond "Haru MCP public ingress disabled until authentication is configured" 403
+}
+
+# After your authentication layer is configured, it may proxy authenticated
+# requests to http://127.0.0.1:8765. Do not expose that loopback listener
+# anonymously, and do not turn the Haru gateway bind address into 0.0.0.0.
