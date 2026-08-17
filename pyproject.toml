@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "haru-mcp"
+version = "0.1.0"
+description = "Self-hosted MCP gateway for an isolated VPS workspace"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "mcp>=1.27,<2",
+  "anyio>=4,<5",
+  "typing-extensions>=4.12,<5",
+]
+
+[project.optional-dependencies]
+test = [
+  "pytest>=8,<9",
+  "pytest-asyncio>=0.23,<1",
+]
+
+[project.scripts]
+haru-mcp = "haru_mcp.server:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["haru_mcp*"]
+
+[tool.setuptools.package-data]
+haru_mcp = ["HARU-INSTRUCTIONS.md"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+asyncio_mode = "auto"
