@@ -1,0 +1,192 @@
+# Workspace backends
+
+Haru VPS MCP is a gateway facade. Its filesystem and shell tools delegate to **separate MCP servers on loopback**. This guide shows a public-safe reference composition using the upstream components recorded in [`THIRD-PARTY.md`](../THIRD-PARTY.md).
+
+The intended boundary is:
+
+```text
+Haru MCP gateway
+  127.0.0.1:8765
+       |
+       +--> http://127.0.0.1:8766/servers/filesystem/mcp
+       |       -> filesystem MCP stdio process
+       |       -> dedicated workspace root only
+       |
+       +--> http://127.0.0.1:8766/servers/shell/mcp
+               -> shell MCP stdio process
+               -> same disposable workspace
+```
+
+There is **no second public hostname** for this backend layer. Keep the listener on loopback and let only the Haru gateway talk to it.
+
+## Security assumptions
+
+The shell server is a privileged development capability: it can execute commands with the permissions of its service account. Treat the whole backend as a capability boundary, not as a general-purpose login shell.
+
+Use a dedicated unprivileged service identity and a dedicated/disposable workspace. Do not place production credentials, SSH agents, host administration files, container-engine sockets, cloud credentials, or unrelated application data inside that workspace or its service environment.
+
+The filesystem server must be started with the workspace root as its allowed root. The shell server should use the same directory as its working directory. Systemd hardening is useful defense in depth, but it does not make arbitrary shell execution safe against secrets that the service account can already read.
+
+## Reference versions
+
+The reproducible reference point used by this guide is:
+
+```text
+mcp-proxy==0.12.0
+mcp==1.27.1                 # compatibility pin for this proxy composition
+@modelcontextprotocol/server-filesystem@2026.7.10
+shell-exec-mcp@1.2.0
+```
+
+The exact upstream source commits and license notes are in [`THIRD-PARTY.md`](../THIRD-PARTY.md). Re-check upstream release notes and licenses before changing these pins.
+
+## Example filesystem layout
+
+The paths below are examples, not required Haru paths:
+
+```text
+/srv/haru-workspace/              disposable workspace data
+/opt/haru-workspace/proxy/        Python virtual environment for mcp-proxy
+/opt/haru-workspace/node/         Node package installation
+/etc/haru-workspace/servers.json  non-secret named-server configuration
+/var/lib/haru-workspace/home/     service HOME
+/var/lib/haru-workspace/tmp/      service temporary directory
+```
+
+Create them so the workspace service user can write only where it needs to write. Keep `/opt` and `/etc` installation/configuration material owner-controlled and non-writable by the runtime account.
+
+## Install the selected upstream packages
+
+One straightforward layout is:
+
+```bash
+python3 -m venv /opt/haru-workspace/proxy
+/opt/haru-workspace/proxy/bin/pip install \
+  'mcp-proxy==0.12.0' \
+  'mcp==1.27.1'
+
+mkdir -p /opt/haru-workspace/node
+cd /opt/haru-workspace/node
+npm init -y
+npm install --omit=dev \
+  '@modelcontextprotocol/server-filesystem@2026.7.10' \
+  'shell-exec-mcp@1.2.0'
+```
+
+For a stricter deployment, build/package these dependencies in a separate staging environment and install verified artifacts into an owner-controlled prefix. Do not treat mutable global `pip` or `npm` state as a deployment record.
+
+## Configure named stdio servers
+
+`mcp-proxy` 0.12.0 supports named stdio servers and mounts each one under `/servers/<name>/`; its Streamable HTTP endpoint for each instance is `/mcp`. A minimal `/etc/haru-workspace/servers.json` can therefore look like:
+
+```json
+{
+  "mcpServers": {
+    "filesystem": {
+      "command": "/opt/haru-workspace/node/node_modules/.bin/mcp-server-filesystem",
+      "args": ["/srv/haru-workspace"],
+      "cwd": "/srv/haru-workspace",
+      "env": {
+        "HOME": "/var/lib/haru-workspace/home",
+        "PATH": "/opt/haru-workspace/node/node_modules/.bin:/usr/bin:/bin",
+        "TMPDIR": "/var/lib/haru-workspace/tmp"
+      }
+    },
+    "shell": {
+      "command": "/opt/haru-workspace/node/node_modules/.bin/shell-exec-mcp",
+      "args": [],
+      "cwd": "/srv/haru-workspace",
+      "env": {
+        "HOME": "/var/lib/haru-workspace/home",
+        "PATH": "/opt/haru-workspace/node/node_modules/.bin:/usr/bin:/bin",
+        "TMPDIR": "/var/lib/haru-workspace/tmp"
+      }
+    }
+  }
+}
+```
+
+Keep this file free of credentials. If a future backend genuinely needs a secret, inject it outside Git and review whether that backend still belongs in the same trust boundary.
+
+## Start the loopback proxy
+
+A foreground canary is useful before systemd:
+
+```bash
+cd /srv/haru-workspace
+HOME=/var/lib/haru-workspace/home \
+TMPDIR=/var/lib/haru-workspace/tmp \
+/opt/haru-workspace/proxy/bin/mcp-proxy \
+  --host 127.0.0.1 \
+  --port 8766 \
+  --cwd /srv/haru-workspace \
+  --named-server-config /etc/haru-workspace/servers.json
+```
+
+The expected Haru-facing endpoints are then:
+
+```text
+http://127.0.0.1:8766/servers/filesystem/mcp
+http://127.0.0.1:8766/servers/shell/mcp
+```
+
+Do not change the proxy bind address to `0.0.0.0` merely to make connectivity easier. If the Haru gateway cannot reach a loopback backend on the same host, fix the local service/configuration problem instead of creating a public backend route.
+
+## Systemd shape
+
+After the foreground canary passes, supervise the proxy with systemd. A hardened service commonly includes:
+
+```ini
+[Service]
+Type=simple
+User=haru-workspace
+Group=haru-workspace
+WorkingDirectory=/srv/haru-workspace
+ExecStart=/opt/haru-workspace/proxy/bin/mcp-proxy --host 127.0.0.1 --port 8766 --cwd /srv/haru-workspace --named-server-config /etc/haru-workspace/servers.json
+Restart=on-failure
+KillMode=control-group
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/srv/haru-workspace /var/lib/haru-workspace
+ReadOnlyPaths=/opt/haru-workspace /etc/haru-workspace
+CapabilityBoundingSet=
+RestrictSUIDSGID=true
+```
+
+Adjust hardening for your distribution and required tooling. Test the final unit with `systemd-analyze verify` where available. Resource limits should be chosen from your workload and host capacity rather than copied from another machine.
+
+## Point the Haru gateway at the backend
+
+The gateway defaults already match this reference composition:
+
+```text
+HARU_MCP_WORKSPACE_FILESYSTEM_URL=http://127.0.0.1:8766/servers/filesystem/mcp
+HARU_MCP_WORKSPACE_SHELL_URL=http://127.0.0.1:8766/servers/shell/mcp
+```
+
+Restart the gateway only when its environment changed.
+
+## Verify the composition
+
+Check the layers separately:
+
+1. **Listener:** confirm the workspace proxy is listening on loopback only.
+2. **Proxy status:** `mcp-proxy` provides a global `/status` endpoint; use it as a local process/composition signal, not as proof that every delegated tool is correct.
+3. **Gateway health:** confirm Haru's `health` tool still works.
+4. **Discovery:** from an MCP client through Haru, confirm the workspace filesystem and shell tools are present.
+5. **Filesystem smoke:** list or read a harmless file inside the disposable workspace.
+6. **Shell smoke:** run a harmless command such as `pwd` and verify it resolves inside the intended workspace.
+7. **Negative boundary:** verify a filesystem request outside the configured root is rejected by the filesystem server.
+
+A healthy Haru gateway does not prove the delegated backend is healthy. Conversely, a backend failure should make delegated calls fail; it should not make the gateway start exposing a different/public backend.
+
+## Stop, recover, and update
+
+Stopping the workspace service should terminate the proxy and its stdio descendants as one process group. Check for leftover child processes after abnormal tests or browser/shell probes.
+
+For recovery, keep the backend private while you inspect the local service, package install, configuration, filesystem permissions, and logs. Do not create a temporary public listener as a recovery shortcut.
+
+For upgrades, change one pin set deliberately, rebuild cleanly, repeat the acceptance checks above, and keep the previous known-good install available until the new composition passes. Record both package versions and exact upstream source commits so a future operator can reproduce the same stack.
