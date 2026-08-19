@@ -1,0 +1,52 @@
+[Unit]
+Description=Haru workspace MCP backends (example)
+After=network.target
+ConditionPathIsDirectory=/srv/haru-workspace
+
+[Service]
+Type=simple
+User=haru
+Group=haru
+WorkingDirectory=/srv/haru-workspace
+
+# systemd creates /var/lib/haru-workspace owned by User=/Group=.
+StateDirectory=haru-workspace
+StateDirectoryMode=0700
+Environment=HOME=/var/lib/haru-workspace/home
+Environment=TMPDIR=/var/lib/haru-workspace/tmp
+Environment=PATH=/opt/haru-workspace/proxy/bin:/opt/haru-workspace/node/node_modules/.bin:/usr/bin:/bin
+Environment=PYTHONNOUSERSITE=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStartPre=/usr/bin/mkdir -p /var/lib/haru-workspace/home /var/lib/haru-workspace/tmp
+ExecStartPre=/usr/bin/chmod 0700 /var/lib/haru-workspace/home /var/lib/haru-workspace/tmp
+ExecStartPre=/usr/bin/test -x /opt/haru-workspace/proxy/bin/mcp-proxy
+ExecStartPre=/usr/bin/test -r /etc/haru-workspace/servers.json
+ExecStart=/opt/haru-workspace/proxy/bin/mcp-proxy --host 127.0.0.1 --port 8766 --named-server-config /etc/haru-workspace/servers.json
+Restart=on-failure
+RestartSec=2s
+TimeoutStopSec=15s
+KillMode=control-group
+
+# Filesystem/process isolation. These directives do not make the whole host
+# invisible: most system paths remain readable but read-only.
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=tmpfs
+BindPaths=/srv/haru-workspace
+ReadWritePaths=/srv/haru-workspace /var/lib/haru-workspace
+ReadOnlyPaths=/opt/haru-workspace /etc/haru-workspace
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictSUIDSGID=true
+LockPersonality=true
+UMask=0077
+
+# Example starting points only. Tune these to the host and workload.
+MemoryMax=1G
+TasksMax=128
+LimitNOFILE=4096
+
+[Install]
+WantedBy=multi-user.target

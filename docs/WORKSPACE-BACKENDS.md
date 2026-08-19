@@ -23,7 +23,7 @@ There is **no second public hostname** for this backend layer. Keep the listener
 
 The shell server is a privileged development capability: it can execute commands with the permissions of its service account. Treat the whole backend as a capability boundary, not as a general-purpose login shell.
 
-Use a dedicated unprivileged service identity and a dedicated/disposable workspace. Do not place production credentials, SSH agents, host administration files, container-engine sockets, cloud credentials, or unrelated application data inside that workspace or its service environment.
+Use a dedicated unprivileged service identity and a dedicated/disposable workspace. For the basic single-host example, the same non-sudo `haru` account can run the Haru gateway and workspace backend; splitting those two services into separate identities is optional defense in depth. Do not place production credentials, SSH agents, host administration files, container-engine sockets, cloud credentials, or unrelated application data inside that workspace or its service environment.
 
 The filesystem server must be started with the workspace root as its allowed root. The shell server should use the same directory as its working directory. Systemd hardening is useful defense in depth, but it does not make arbitrary shell execution safe against secrets that the service account can already read.
 
@@ -77,7 +77,7 @@ For a stricter deployment, build/package these dependencies in a separate stagin
 
 ## Configure named stdio servers
 
-`mcp-proxy` 0.12.0 supports named stdio servers and mounts each one under `/servers/<name>/`; its Streamable HTTP endpoint for each instance is `/mcp`. A minimal `/etc/haru-workspace/servers.json` can therefore look like:
+`mcp-proxy` 0.12.0 supports named stdio servers and mounts each one under `/servers/<name>/`; its Streamable HTTP endpoint for each instance is `/mcp`. The repository also includes the same non-secret composition as a copyable file at [`deploy/workspace/servers.json.example`](../deploy/workspace/servers.json.example); install a reviewed copy as `/etc/haru-workspace/servers.json`. A minimal configuration looks like:
 
 ```json
 {
@@ -131,31 +131,23 @@ http://127.0.0.1:8766/servers/shell/mcp
 
 Do not change the proxy bind address to `0.0.0.0` merely to make connectivity easier. If the Haru gateway cannot reach a loopback backend on the same host, fix the local service/configuration problem instead of creating a public backend route.
 
-## Systemd shape
+## Systemd workspace isolation example
 
-After the foreground canary passes, supervise the proxy with systemd. A hardened service commonly includes:
+After the foreground canary passes, supervise the proxy with systemd. The repository includes [`deploy/workspace/haru-workspace.service.example`](../deploy/workspace/haru-workspace.service.example), which is intended to be copied, reviewed, and tuned before installation.
 
-```ini
-[Service]
-Type=simple
-User=haru-workspace
-Group=haru-workspace
-WorkingDirectory=/srv/haru-workspace
-ExecStart=/opt/haru-workspace/proxy/bin/mcp-proxy --host 127.0.0.1 --port 8766 --named-server-config /etc/haru-workspace/servers.json
-Restart=on-failure
-KillMode=control-group
-NoNewPrivileges=true
-PrivateTmp=true
-PrivateDevices=true
-ProtectSystem=strict
-ProtectHome=true
-ReadWritePaths=/srv/haru-workspace /var/lib/haru-workspace
-ReadOnlyPaths=/opt/haru-workspace /etc/haru-workspace
-CapabilityBoundingSet=
-RestrictSUIDSGID=true
-```
+The example makes several boundaries concrete:
 
-Adjust hardening for your distribution and required tooling. Test the final unit with `systemd-analyze verify` where available. Resource limits should be chosen from your workload and host capacity rather than copied from another machine.
+- `User=haru` / `Group=haru` use one dedicated non-sudo identity for the basic gateway + workspace deployment. The gateway example uses the same identity. Splitting gateway and workspace users is optional advanced hardening.
+- `HOME=/var/lib/haru-workspace/home` and `TMPDIR=/var/lib/haru-workspace/tmp` keep service runtime state away from a normal login home. Setting `HOME` alone is not filesystem isolation.
+- `ProtectHome=tmpfs` masks ordinary `/home`, `/root`, and `/run/user` trees inside the service namespace, while `ProtectSystem=strict` makes the host filesystem read-only by default. `ReadWritePaths=` re-opens only the workspace and Haru runtime state for writes. Other system paths may still be readable, so do not describe this as making the entire host invisible.
+- `BindPaths=/srv/haru-workspace` makes the intended workspace an explicit mount in the service namespace; the filesystem server is independently scoped to the same root by `servers.json`.
+- `WorkingDirectory=/srv/haru-workspace` is the effective working-directory control for the selected named-server composition. There is intentionally no per-server `cwd` field and no named-server `--cwd` claim.
+- `KillMode=control-group` keeps the proxy and its stdio descendants under one service lifecycle.
+- `MemoryMax=1G` and `TasksMax=128` are **example starting points**, not Haru requirements. Tune them to the machine and workload. The workspace is the bursty/disposable part of the stack and should be contained so it is less likely to starve the smaller gateway/tunnel services.
+
+Before starting the service, create `/srv/haru-workspace`, make it owned by the chosen non-sudo service account, install the reviewed named-server config under `/etc/haru-workspace/`, and keep `/opt/haru-workspace` plus `/etc/haru-workspace` non-writable by that runtime account. `StateDirectory=haru-workspace` lets systemd create `/var/lib/haru-workspace`; the unit then creates the service HOME/TMPDIR beneath it.
+
+Adjust hardening for your distribution and required tooling. Test the final unit with `systemd-analyze verify` where available, then perform the foreground/runtime checks below.
 
 ## Point the Haru gateway at the backend
 

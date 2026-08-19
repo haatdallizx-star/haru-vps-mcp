@@ -47,7 +47,7 @@ Do not infer missing values from old screenshots or copy a historical client ver
 
 ## Keep tunnel credentials out of Git
 
-Install the tunnel process under a dedicated unprivileged service identity that is separate from the account used by Haru workspace shell tools.
+Run the tunnel process as an unprivileged service. For the smallest single-host deployment, it can use the same dedicated `haru` account as the gateway/workspace, but that choice deliberately shares a trust boundary: workspace shell commands running as the same UID may be able to inspect same-UID process state and any tunnel material readable by that UID. If the tunnel uses reusable credentials or you want a stronger credential boundary, use a separate `haru-tunnel` identity as defense in depth.
 
 Store tunnel credentials and product-specific configuration outside the repository, for example under `/etc/haru-tunnel/`. Prefer root ownership and restrictive permissions. If systemd reads a secret `EnvironmentFile=`, `root:root` mode `0600` can keep the file unreadable by the runtime account; if the tunnel client itself must open a config file after privilege drop, grant only the minimum group/read permission required by that client.
 
@@ -76,7 +76,7 @@ A local tunnel process being alive is not enough. The acceptance test should pro
 
 Once the foreground canary works, supervise the **same proven current command** with systemd rather than inventing different product flags for the daemonized form.
 
-A generic hardening shape is:
+A generic hardening shape is shown below. This example uses the optional split `haru-tunnel` identity; a minimal single-user deployment may substitute its dedicated `haru` account after accepting the same-UID trust-boundary tradeoff above:
 
 ```ini
 [Unit]
