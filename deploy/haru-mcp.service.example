@@ -5,8 +5,8 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=haru-mcp
-Group=haru-mcp
+User=haru
+Group=haru
 EnvironmentFile=/etc/haru-mcp/haru-mcp.env
 ExecStart=/opt/haru-mcp/venv/bin/haru-mcp
 Restart=on-failure

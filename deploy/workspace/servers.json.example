@@ -1,0 +1,22 @@
+{
+  "mcpServers": {
+    "filesystem": {
+      "command": "/opt/haru-workspace/node/node_modules/.bin/mcp-server-filesystem",
+      "args": ["/srv/haru-workspace"],
+      "env": {
+        "HOME": "/var/lib/haru-workspace/home",
+        "PATH": "/opt/haru-workspace/node/node_modules/.bin:/usr/bin:/bin",
+        "TMPDIR": "/var/lib/haru-workspace/tmp"
+      }
+    },
+    "shell": {
+      "command": "/opt/haru-workspace/node/node_modules/.bin/shell-exec-mcp",
+      "args": [],
+      "env": {
+        "HOME": "/var/lib/haru-workspace/home",
+        "PATH": "/opt/haru-workspace/node/node_modules/.bin:/usr/bin:/bin",
+        "TMPDIR": "/var/lib/haru-workspace/tmp"
+      }
+    }
+  }
+}
