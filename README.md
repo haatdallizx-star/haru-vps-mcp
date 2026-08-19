@@ -2,6 +2,8 @@
 
 **A mini tunnel to a mini computer for ChatGPT.**
 
+**Setup guide:** [Notion-style web note (中文 / English)](https://kohaku4yz.github.io/haru-vps-mcp/)
+
 Haru VPS MCP is a small self-hosted MCP gateway for an isolated VPS workspace. It gives an MCP client a narrow filesystem/shell facade without making the host itself the workspace.
 
 ```text

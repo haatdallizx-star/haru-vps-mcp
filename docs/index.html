@@ -1,0 +1,369 @@
+<!doctype html>
+<html lang="zh-CN" data-ui-lang="zh">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="color-scheme" content="light" />
+<meta name="description" content="Haru VPS MCP：把 filesystem / shell 收进独立 workspace，再通过 OpenAI Secure MCP Tunnel 给 ChatGPT 使用的自托管指南。" />
+<title>Haru VPS MCP — 自托管指南</title>
+<style>
+:root{
+  color-scheme:light;
+  --text:#37352f;
+  --muted:#787774;
+  --faint:#9b9a97;
+  --border:rgba(55,53,47,.16);
+  --code-bg:#f7f6f3;
+  --callout-bg:#f1f1ef;
+  --inline-bg:rgba(135,131,120,.15);
+  --link:#2f76b7;
+  --cover:#f2f4ee;
+  --sans:ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans SC","PingFang SC","Microsoft YaHei",Arial,sans-serif;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono",monospace;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:#fff;color:var(--text);font-family:var(--sans);font-size:16px;line-height:1.65;-webkit-font-smoothing:antialiased}
+a{color:var(--link);text-decoration:underline;text-decoration-thickness:1px;text-underline-offset:2px}
+.topline{height:46px;display:flex;align-items:center;padding:0 18px;position:relative;z-index:3;font-size:13px;color:var(--muted)}
+.topline a{color:inherit;text-decoration:none}.topline a:hover{text-decoration:underline}
+.topline .sep{margin:0 7px;color:#b8b6b1}
+.topline .lang-switch{margin-left:auto;display:inline-flex;align-items:center;gap:3px;padding:2px;border-radius:6px}
+.lang-switch button{border:0;background:transparent;color:var(--muted);font:12px var(--sans);padding:4px 7px;border-radius:5px;cursor:pointer}
+.lang-switch button:hover{background:var(--code-bg);color:var(--text)}
+.lang-switch button.active{background:var(--code-bg);color:var(--text);font-weight:600}
+[data-lang-only="en"]{display:none!important}
+html[data-ui-lang="en"] [data-lang-only="zh"]{display:none!important}
+html[data-ui-lang="en"] [data-lang-only="en"]{display:revert!important}
+.cover{display:none}
+.page{width:min(708px,calc(100% - 48px));margin:0 auto;padding:0 0 120px}
+.page-header{margin:54px 0 46px;position:relative;z-index:2}
+.page-icon{width:104px;height:122px;margin:0 0 22px;display:flex;align-items:flex-end}
+.page-icon img{display:block;width:auto;height:118px;max-width:104px;object-fit:contain}
+h1{margin:0 0 18px;font-size:clamp(2.45rem,7vw,3rem);font-weight:700;letter-spacing:-.035em;line-height:1.2}
+.subtitle{margin:0;padding-left:14px;border-left:3px solid var(--text);color:var(--text);font-weight:600}
+.lede{margin-top:26px}
+section{margin-top:42px;scroll-margin-top:28px}
+h2{margin:0 0 14px;font-size:1.52rem;font-weight:650;letter-spacing:-.018em;line-height:1.3}
+h3{margin:28px 0 10px;font-size:1.08rem;font-weight:650;line-height:1.35}
+p{margin:10px 0}
+ul,ol{margin:10px 0;padding-left:1.55em}li{margin:3px 0}strong{font-weight:650}
+code{font-family:var(--mono);font-size:.86em}
+p code,li code{padding:.12em .3em;border-radius:3px;background:var(--inline-bg);color:#eb5757}
+.code-wrap{position:relative;margin:14px 0}
+pre{margin:0;padding:18px 20px;overflow-x:auto;border-radius:3px;background:var(--code-bg);color:var(--text);font-family:var(--mono);font-size:.84rem;line-height:1.55;tab-size:2;white-space:pre}
+pre code{color:inherit;background:transparent;font-size:inherit}
+.copy{position:absolute;top:8px;right:8px;border:0;border-radius:4px;background:rgba(255,255,255,.88);color:var(--muted);font:12px var(--sans);padding:5px 8px;cursor:pointer;opacity:0;transition:opacity .12s ease,background .12s ease}
+.code-wrap:hover .copy,.copy:focus-visible{opacity:1}.copy:hover{background:#fff}
+.callout{margin:16px 0;padding:16px 18px;border-radius:3px;background:var(--callout-bg);display:grid;grid-template-columns:24px 1fr;gap:10px}.callout .icon{line-height:1.55}
+.architecture{margin:26px 0 0}.architecture figcaption{margin-top:7px;color:var(--muted);font-size:.82rem;text-align:left}
+.checklist{list-style:none;padding-left:0}.checklist li{display:grid;grid-template-columns:18px 1fr;gap:9px;margin:7px 0}.box{width:15px;height:15px;margin-top:5px;border:1.5px solid #9b9a97;border-radius:2px;background:#fff}
+.resources{padding-left:1.35em}.resources li{margin:6px 0}.references{overflow-wrap:anywhere}
+footer{margin-top:52px;color:var(--muted);font-size:.82rem}
+
+/* Notion-style floating table of contents */
+.toc-dock{position:fixed;z-index:20;top:94px;right:18px;display:flex;align-items:flex-start;outline:none}
+.toc-rail{width:46px;padding:10px 8px;display:flex;flex-direction:column;align-items:center;gap:10px;border-radius:8px;cursor:default}
+.toc-rail a{width:30px;height:4px;border-radius:99px;background:#e5e4e1;text-decoration:none;transition:background .12s ease,transform .12s ease}
+.toc-rail a:hover{background:#bab8b3}.toc-rail a.active{background:#37352f}
+.toc-panel{position:absolute;right:50px;top:0;width:236px;padding:18px 20px;border:1px solid rgba(55,53,47,.13);border-radius:18px;background:rgba(255,255,255,.98);box-shadow:0 16px 42px rgba(15,15,15,.10),0 1px 2px rgba(15,15,15,.05);opacity:0;transform:translateX(8px) scale(.985);transform-origin:top right;pointer-events:none;transition:opacity .14s ease,transform .14s ease}
+.toc-dock:hover .toc-panel,.toc-dock:focus-within .toc-panel{opacity:1;transform:none;pointer-events:auto}
+.toc-panel a{display:block;padding:4px 0;color:#85827d;text-decoration:none;font-size:15px;line-height:1.55;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.toc-panel a:hover{color:var(--text)}.toc-panel a.active{color:#4d82d8}
+
+@media(max-width:1040px){.toc-dock{display:none}}
+@media(max-width:600px){
+ body{font-size:15.5px}.topline{height:42px;padding:0 14px}.cover{height:116px}.page{width:min(100% - 32px,708px);padding-bottom:82px}.page-header{margin-top:-34px;margin-bottom:38px}.page-icon{width:82px;height:98px;margin-bottom:18px}.page-icon img{height:94px;max-width:82px}section{margin-top:36px}pre{margin-inline:-4px;padding:15px 16px;font-size:.78rem}.copy{opacity:1}.architecture pre{font-size:.72rem}
+}
+@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}*{transition:none!important}}
+</style>
+</head>
+<body>
+<nav class="topline" aria-label="Breadcrumb">
+  <a href="https://github.com/kohaku4yz/haru-vps-mcp" target="_blank" rel="noreferrer">Haru VPS MCP</a><span class="sep">/</span><span data-lang-only="zh">自托管指南</span><span data-lang-only="en">Self-hosting guide</span>
+  <div class="lang-switch" role="group" aria-label="Language">
+    <button type="button" data-lang-set="zh" aria-pressed="true">中文</button>
+    <button type="button" data-lang-set="en" aria-pressed="false">English</button>
+  </div>
+</nav>
+<div class="cover" aria-hidden="true"></div>
+
+<aside class="toc-dock" aria-label="页面目录" tabindex="0">
+  <nav class="toc-rail" aria-label="目录快速导航">
+    <a href="#prepare" data-label-zh="VPS 准备" data-label-en="VPS preparation" aria-label="VPS 准备" title="VPS 准备"></a>
+    <a href="#install" data-label-zh="安装" data-label-en="Install" aria-label="安装" title="安装"></a>
+    <a href="#tunnel" data-label-zh="OpenAI tunnel 设置" data-label-en="OpenAI tunnel setup" aria-label="OpenAI tunnel 设置" title="OpenAI tunnel 设置"></a>
+    <a href="#acceptance" data-label-zh="验收" data-label-en="Acceptance" aria-label="验收" title="验收"></a>
+    <a href="#compatibility" data-label-zh="兼容性" data-label-en="Compatibility" aria-label="兼容性" title="兼容性"></a>
+    <a href="#read-more" data-label-zh="Read More" data-label-en="Read More" aria-label="Read More" title="Read More"></a>
+    <a href="#references" data-label-zh="参考" data-label-en="References" aria-label="参考" title="参考"></a>
+  </nav>
+  <nav class="toc-panel" aria-label="页面目录展开">
+    <a href="#prepare" data-label-zh="VPS 准备" data-label-en="VPS preparation">VPS 准备</a>
+    <a href="#install" data-label-zh="安装" data-label-en="Install">安装</a>
+    <a href="#tunnel" data-label-zh="OpenAI tunnel 设置" data-label-en="OpenAI tunnel setup">OpenAI tunnel 设置</a>
+    <a href="#acceptance" data-label-zh="验收" data-label-en="Acceptance">验收</a>
+    <a href="#compatibility" data-label-zh="兼容性" data-label-en="Compatibility">兼容性</a>
+    <a href="#read-more" data-label-zh="Read More ⬇️" data-label-en="Read More ⬇️">Read More ⬇️</a>
+    <a href="#references" data-label-zh="参考" data-label-en="References">参考</a>
+  </nav>
+</aside>
+
+<main class="page">
+  <header class="page-header" id="overview">
+    <div class="page-icon" aria-label="Haru apple icon"><img src="data:image/png;base64,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" alt="" aria-hidden="true"></div>
+    <h1>Haru VPS MCP</h1>
+    <blockquote class="subtitle">A mini tunnel to a mini computer for ChatGPT.</blockquote>
+    <div class="lede">
+      <p data-lang-only="zh">这是一个给 AI 一台“小电脑”的自托管 MCP Gateway。它把 filesystem / shell 能力收进一个<strong>独立、可丢弃的 workspace</strong>，再通过 MCP 让 ChatGPT 或其他可信客户端使用；host 本身不是 workspace，Haru 和 workspace backend 也都默认只监听 loopback。</p>
+      <p data-lang-only="en">This is a self-hosted MCP gateway that gives an AI a tiny computer of its own. It puts filesystem / shell capabilities inside an <strong>independent, disposable workspace</strong>, then exposes them over MCP to ChatGPT or another trusted client. The host itself is not the workspace, and both Haru and the workspace backend bind to loopback by default.</p>
+    </div>
+    <figure class="architecture">
+      <pre><code>                    your Linux machine
+
+        ┌─────────────────────────────────┐
+        │                                 │
+AI ---&gt; │  Haru gateway                   │
+MCP     │  127.0.0.1:8765                 │
+        │          |                      │
+        │          v                      │
+        │  workspace backends             │
+        │  127.0.0.1:8766                 │
+        │       |        |                │
+        │       v        v                │
+        │   filesystem   shell            │
+        │       \        /                │
+        │        \      /                 │
+        │         v    v                  │
+        │     /srv/haru-workspace         │
+        │                                 │
+        └─────────────────────────────────┘</code></pre>
+    </figure>
+    <p data-lang-only="zh">这份笔记走最短的自建路径：<strong>VPS 准备 → 安装 gateway + workspace → OpenAI Secure MCP Tunnel → 验收 / 兼容性</strong>。完整实现和 public-safe 运维说明在 <a href="https://github.com/kohaku4yz/haru-vps-mcp" target="_blank" rel="noreferrer">kohaku4yz/haru-vps-mcp</a>。</p>
+    <p data-lang-only="en">This note follows the shortest self-hosting path: <strong>prepare the VPS → install the gateway + workspace → add an OpenAI Secure MCP Tunnel → acceptance / compatibility checks</strong>. The full implementation and public-safe operator documentation live in <a href="https://github.com/kohaku4yz/haru-vps-mcp" target="_blank" rel="noreferrer">kohaku4yz/haru-vps-mcp</a>.</p>
+  </header>
+
+  <section id="prepare">
+    <h2 data-lang-only="zh">VPS 准备</h2>
+    <h2 data-lang-only="en">VPS preparation</h2>
+    <ol>
+      <li data-lang-only="zh">先看机器还有多少余量。gateway 本体通常只是几十 MB 量级，真正会 burst 的一般是 workspace / shell 子进程，所以限制优先放在 workspace service。</li>
+      <li data-lang-only="en">First, check how much headroom the machine has. The gateway itself is usually only tens of MB; bursty usage generally comes from workspace / shell child processes, so put resource limits on the workspace service first.</li>
+    </ol>
+    <div class="code-wrap"><button class="copy" type="button">Copy</button><pre><code>free -h
+df -h /
+nproc
+systemd-cgtop</code></pre></div>
+    <p data-lang-only="zh">公开示例里的 <code>MemoryMax=1G</code>、<code>TasksMax=128</code> 只是起点，不是 Haru 的硬要求；按自己的 VPS 调整即可。</p>
+    <p data-lang-only="en"><code>MemoryMax=1G</code> and <code>TasksMax=128</code> in the public examples are starting points, not hard Haru requirements. Adjust them to fit your VPS.</p>
+    <ol start="2" data-lang-only="zh"><li>创建一个专用、non-sudo 的 service user：</li></ol>
+    <ol start="2" data-lang-only="en"><li>Create a dedicated, non-sudo service user:</li></ol>
+    <div class="code-wrap"><button class="copy" type="button">Copy</button><pre><code>sudo useradd --system --user-group \
+  --home-dir /var/lib/haru --create-home \
+  --shell /usr/sbin/nologin haru</code></pre></div>
+    <ol start="3" data-lang-only="zh"><li>创建独立 workspace。<strong>不要把 <code>/home/you</code>、<code>/root</code> 或 production data 当 AI workspace。</strong></li></ol>
+    <ol start="3" data-lang-only="en"><li>Create an independent workspace. <strong>Do not use <code>/home/you</code>, <code>/root</code>, or production data as the AI workspace.</strong></li></ol>
+    <div class="code-wrap"><button class="copy" type="button">Copy</button><pre><code>sudo install -d -o haru -g haru -m 0700 /srv/haru-workspace
+sudo install -d -o root -g root -m 0755 \
+  /etc/haru-mcp /etc/haru-workspace /opt/haru-workspace</code></pre></div>
+    <p data-lang-only="zh">Haru 的公开 systemd workspace example 还会用 <code>ProtectHome=tmpfs</code>、<code>ProtectSystem=strict</code>、独立 <code>HOME=/var/lib/haru-workspace/home</code> 和 <code>ReadWritePaths=</code> 做第二层隔离；<strong>单独改 HOME 不等于 filesystem isolation</strong>。</p>
+    <p data-lang-only="en">Haru's public systemd workspace example adds a second isolation layer with <code>ProtectHome=tmpfs</code>, <code>ProtectSystem=strict</code>, a separate <code>HOME=/var/lib/haru-workspace/home</code>, and <code>ReadWritePaths=</code>. <strong>Changing HOME alone is not filesystem isolation.</strong></p>
+  </section>
+
+  <section id="install">
+    <h2 data-lang-only="zh">安装</h2>
+    <h2 data-lang-only="en">Install</h2>
+    <ol data-lang-only="zh"><li>装 Haru gateway：</li></ol>
+    <ol data-lang-only="en"><li>Install the Haru gateway:</li></ol>
+    <div class="code-wrap"><button class="copy" type="button">Copy</button><pre><code>sudo git clone https://github.com/kohaku4yz/haru-vps-mcp.git /opt/haru-mcp
+sudo python3 -m venv /opt/haru-mcp/venv
+sudo /opt/haru-mcp/venv/bin/pip install /opt/haru-mcp
+sudo install -m 0644 /opt/haru-mcp/deploy/haru-mcp.env.example \
+  /etc/haru-mcp/haru-mcp.env
+sudo install -m 0644 /opt/haru-mcp/deploy/haru-mcp.service.example \
+  /etc/systemd/system/haru-mcp.service</code></pre></div>
+    <ol start="2" data-lang-only="zh"><li>装 loopback workspace backends：</li></ol>
+    <ol start="2" data-lang-only="en"><li>Install the loopback workspace backends:</li></ol>
+    <div class="code-wrap"><button class="copy" type="button">Copy</button><pre><code>sudo python3 -m venv /opt/haru-workspace/proxy
+sudo /opt/haru-workspace/proxy/bin/pip install \
+  'mcp-proxy==0.12.0' 'mcp==1.27.1'
+
+sudo install -d -m 0755 /opt/haru-workspace/node
+cd /opt/haru-workspace/node
+sudo npm init -y
+sudo npm install --omit=dev \
+  '@modelcontextprotocol/server-filesystem@2026.7.10' \
+  'shell-exec-mcp@1.2.0'
+
+sudo install -m 0644 /opt/haru-mcp/deploy/workspace/servers.json.example \
+  /etc/haru-workspace/servers.json
+sudo install -m 0644 /opt/haru-mcp/deploy/workspace/haru-workspace.service.example \
+  /etc/systemd/system/haru-workspace.service</code></pre></div>
+    <ol start="3" data-lang-only="zh"><li>启动：</li></ol>
+    <ol start="3" data-lang-only="en"><li>Start the services:</li></ol>
+    <div class="code-wrap"><button class="copy" type="button">Copy</button><pre><code>sudo systemctl daemon-reload
+sudo systemctl enable --now haru-workspace.service haru-mcp.service
+sudo systemctl --no-pager --full status haru-workspace.service haru-mcp.service</code></pre></div>
+    <p data-lang-only="zh">默认就是 <code>127.0.0.1:8765/mcp</code> → <code>127.0.0.1:8766</code> 的 filesystem / shell backends。需要换版本时先看公开库的 <code>THIRD-PARTY.md</code>，不要随手升级其中一个 pin。</p>
+    <p data-lang-only="en">By default, <code>127.0.0.1:8765/mcp</code> delegates to the filesystem / shell backends on <code>127.0.0.1:8766</code>. Before changing versions, check the public repo's <code>THIRD-PARTY.md</code>; do not casually upgrade one pin in isolation.</p>
+  </section>
+
+  <section id="tunnel">
+    <h2 data-lang-only="zh">OpenAI tunnel 设置</h2>
+    <h2 data-lang-only="en">OpenAI tunnel setup</h2>
+    <aside class="callout" data-lang-only="zh"><div class="icon">⚠️</div><div><strong>Haru 能读写 workspace、执行 shell，所以把它当 privileged MCP。</strong> 给 ChatGPT 私用时优先走 OpenAI Secure MCP Tunnel，并让 Haru 自己继续只 bind <code>127.0.0.1</code>。不要为了连得上就改成 <code>0.0.0.0</code> 或挂匿名公网 reverse proxy。若真的要做 public MCP，应该另做认证设计（通常包括 OAuth）；Host / Origin allowlist 本身不是 authentication。</div></aside>
+    <aside class="callout" data-lang-only="en"><div class="icon">⚠️</div><div><strong>Haru can read and write the workspace and execute shell commands, so treat it as a privileged MCP.</strong> For private ChatGPT use, prefer OpenAI Secure MCP Tunnel and keep Haru itself bound to <code>127.0.0.1</code>. Do not switch to <code>0.0.0.0</code> or add an anonymous public reverse proxy just to make it reachable. A truly public MCP needs a separately reviewed authentication design (typically including OAuth); Host / Origin allowlists are not authentication.</div></aside>
+    <ol data-lang-only="zh">
+      <li>打开 <a href="https://platform.openai.com/settings/organization/tunnels" target="_blank" rel="noreferrer">OpenAI Platform → Tunnels</a>。创建 / 管理 tunnel 的账号需要 Tunnels <strong>Read + Manage</strong>；同时把要使用它的 Platform organization / ChatGPT workspace 关联进去。</li>
+      <li>创建 tunnel 后会得到一个 <code>tunnel_id</code>。Haru 不需要因此增加任何公网 listener：<code>tunnel-client</code> 会从 VPS <strong>主动向 OpenAI 发起 outbound HTTPS</strong>，再把请求转到本机 <code>http://127.0.0.1:8765/mcp</code>。</li>
+      <li>在 <a href="https://platform.openai.com/settings/organization/api-keys" target="_blank" rel="noreferrer">Runtime API keys</a> 创建给 <code>tunnel-client</code> 用的 runtime key。运行 client / 在 ChatGPT 选择 tunnel 的 principal 需要 Tunnels <strong>Read + Use</strong>；不需要在指南里固定写成 <code>all</code>。key 不进 Git。</li>
+      <li>从 Tunnels 页面下载当前支持的 <code>tunnel-client</code>，或使用 <a href="https://github.com/openai/tunnel-client/releases" target="_blank" rel="noreferrer">openai/tunnel-client latest release</a>。<strong>不要把指南钉死在 v0.0.11</strong>；官方现在明确建议跟 latest supported release。</li>
+    </ol>
+    <ol data-lang-only="en">
+      <li>Open <a href="https://platform.openai.com/settings/organization/tunnels" target="_blank" rel="noreferrer">OpenAI Platform → Tunnels</a>. The account creating or managing the tunnel needs Tunnels <strong>Read + Manage</strong>; associate the Platform organization / ChatGPT workspace that will use it.</li>
+      <li>Creating the tunnel gives you a <code>tunnel_id</code>. Haru does not need a public listener: <code>tunnel-client</code> <strong>initiates outbound HTTPS to OpenAI</strong> from the VPS and forwards traffic to <code>http://127.0.0.1:8765/mcp</code>.</li>
+      <li>Create a runtime key for <code>tunnel-client</code> under <a href="https://platform.openai.com/settings/organization/api-keys" target="_blank" rel="noreferrer">Runtime API keys</a>. The principal running the client / selecting the tunnel in ChatGPT needs Tunnels <strong>Read + Use</strong>. Do not hard-code an <code>all</code> role here, and keep the key out of Git.</li>
+      <li>Download the currently supported <code>tunnel-client</code> from the Tunnels page, or use the <a href="https://github.com/openai/tunnel-client/releases" target="_blank" rel="noreferrer">latest openai/tunnel-client release</a>. <strong>Do not pin this guide to v0.0.11</strong>; follow the latest supported release.</li>
+    </ol>
+    <p data-lang-only="zh">先做 foreground canary：</p>
+    <p data-lang-only="en">First, run a foreground canary:</p>
+    <div class="code-wrap"><button class="copy" type="button">Copy</button><pre><code>export CONTROL_PLANE_API_KEY='sk-...'
+tunnel-client init \
+  --sample sample_mcp_remote_no_auth \
+  --profile haru-vps-mcp \
+  --tunnel-id 'tunnel_...' \
+  --mcp-server-url 'http://127.0.0.1:8765/mcp'
+
+tunnel-client doctor --profile haru-vps-mcp --explain
+tunnel-client run --profile haru-vps-mcp</code></pre></div>
+    <p data-lang-only="zh">跑通后再交给 systemd。生产验证过的一种边界是：单独的 <code>haru-tunnel</code> 用户 + <code>/etc/haru-tunnel/tunnel.env</code>（<code>root:root</code>, <code>0600</code>），至少把 <code>CONTROL_PLANE_API_KEY</code> 留在 Git 外；这样 workspace shell 也读不到 tunnel credential。</p>
+    <p data-lang-only="en">Once the foreground path works, hand it to systemd. One production-tested boundary uses a separate <code>haru-tunnel</code> user plus <code>/etc/haru-tunnel/tunnel.env</code> (<code>root:root</code>, <code>0600</code>), keeping at least <code>CONTROL_PLANE_API_KEY</code> out of Git and unreadable from the workspace shell.</p>
+    <h3 data-lang-only="zh">在 ChatGPT 中配置</h3>
+    <h3 data-lang-only="en">Configure ChatGPT</h3>
+    <ol data-lang-only="zh">
+      <li>按 <a href="https://help.openai.com/en/articles/12584461-developer-mode-and-mcp-apps-in-chatgpt" target="_blank" rel="noreferrer">OpenAI 当前 Developer mode 指南</a>启用 Developer mode；具体入口会随 plan / workspace policy 和产品 UI 变化。</li>
+      <li>新建 developer-mode app → Connection 选择 <strong>Tunnel</strong> → 选择或粘贴刚才的 <code>tunnel_id</code>。</li>
+      <li>Haru 本身没有额外 OAuth，所以如果 UI 询问 app-level authentication 时选 <strong>None / 无认证</strong>。这里的“无认证”只指 tunnel 后面的 Haru server；外层远程访问仍由 Secure MCP Tunnel 承担，不会公开裸奔。</li>
+      <li>Scan tools / Create。开一个新聊天选中这个 app（或 @ 它），先调用 <code>health</code>，再做一次 harmless <code>workspace_list_directory</code>。</li>
+    </ol>
+    <ol data-lang-only="en">
+      <li>Enable Developer mode using OpenAI's <a href="https://help.openai.com/en/articles/12584461-developer-mode-and-mcp-apps-in-chatgpt" target="_blank" rel="noreferrer">current Developer mode guide</a>. Exact entry points can change with plan, workspace policy, and product UI.</li>
+      <li>Create a developer-mode app → choose <strong>Tunnel</strong> for the connection → select or paste the <code>tunnel_id</code>.</li>
+      <li>Haru does not add its own OAuth layer, so if the UI asks for app-level authentication choose <strong>None</strong>. “None” only describes the Haru server behind the tunnel; remote access is still protected by Secure MCP Tunnel and is not anonymously public.</li>
+      <li>Scan tools / Create. In a new chat, select the app (or @ mention it), call <code>health</code>, then make one harmless <code>workspace_list_directory</code> call.</li>
+    </ol>
+  </section>
+
+  <section id="acceptance">
+    <h2 data-lang-only="zh">验收</h2>
+    <h2 data-lang-only="en">Acceptance</h2>
+    <ul class="checklist" data-lang-only="zh">
+      <li><span class="box" aria-hidden="true"></span><span><code>haru-mcp.service</code> 和 <code>haru-workspace.service</code> 都是 active；workspace backend 仍只在 loopback。</span></li>
+      <li><span class="box" aria-hidden="true"></span><span><code>tunnel-client</code> 的 <code>/healthz</code> = live、<code>/readyz</code> = ready（health listener 默认也应该留在 loopback）。</span></li>
+      <li><span class="box" aria-hidden="true"></span><span>真正从 ChatGPT 发现 Haru tools，并成功调用一次 <code>health</code> + 一次 harmless workspace read/list。</span></li>
+      <li><span class="box" aria-hidden="true"></span><span>把启动 tunnel 的 SSH session 关掉，再开一个新 ChatGPT 对话重复一次。这样才证明 tunnel 是被 service manager 托住，不是靠当前 shell 活着。</span></li>
+    </ul>
+    <ul class="checklist" data-lang-only="en">
+      <li><span class="box" aria-hidden="true"></span><span><code>haru-mcp.service</code> and <code>haru-workspace.service</code> are active; the workspace backend is still loopback-only.</span></li>
+      <li><span class="box" aria-hidden="true"></span><span><code>tunnel-client</code> reports <code>/healthz</code> = live and <code>/readyz</code> = ready; keep its health listener on loopback too.</span></li>
+      <li><span class="box" aria-hidden="true"></span><span>From ChatGPT, discover the Haru tools and successfully call <code>health</code> plus one harmless workspace read/list.</span></li>
+      <li><span class="box" aria-hidden="true"></span><span>Close the SSH session used to start/configure the tunnel, open a fresh ChatGPT conversation, and repeat the harmless call. This proves the tunnel is owned by the service manager rather than the current shell.</span></li>
+    </ul>
+  </section>
+
+  <section id="compatibility">
+    <h2 data-lang-only="zh">兼容性</h2>
+    <h2 data-lang-only="en">Compatibility</h2>
+    <ul data-lang-only="zh">
+      <li><strong>ChatGPT：</strong>推荐 Secure MCP Tunnel + developer-mode app。连接的 custom MCP server 不再要求必须有 <code>search</code> / <code>fetch</code> 命名的工具，但 ChatGPT 实际可执行哪些 actions 仍取决于当前 plan 和 workspace policy。OpenAI 当前文档说明：包含 write / modify actions 的完整 MCP 目前面向 Business / Enterprise / Edu；Pro 的 developer-mode MCP 当前仅支持 read / fetch 权限。设置前请查看 <a href="https://help.openai.com/en/articles/12584461-developer-mode-and-mcp-apps-in-chatgpt" target="_blank" rel="noreferrer">最新 Developer mode 文档</a>。</li>
+      <li><strong>Codex / Responses API：</strong>OpenAI 的 Secure MCP Tunnel 也支持这些 surface；仍然保持 Haru 私有、loopback-only。</li>
+      <li><strong>其他 MCP client：</strong>Haru 本身是 Streamable HTTP MCP；只要 client 在可信网络里能到 <code>http://127.0.0.1:8765/mcp</code>（或你自己提供的受认证私有路径）就可以对接。<strong>OpenAI Secure MCP Tunnel 本身是 OpenAI 专用 transport</strong>。</li>
+    </ul>
+    <ul data-lang-only="en">
+      <li><strong>ChatGPT:</strong> Secure MCP Tunnel + a developer-mode app is the recommended private path. Connected custom MCP servers no longer need tools named <code>search</code> / <code>fetch</code>, but the actions ChatGPT can actually execute still depend on the current plan and workspace policy. OpenAI's current documentation says full MCP, including write / modify actions, is currently available to Business / Enterprise / Edu, while Pro developer-mode MCP currently supports read / fetch permissions only. Check the <a href="https://help.openai.com/en/articles/12584461-developer-mode-and-mcp-apps-in-chatgpt" target="_blank" rel="noreferrer">latest Developer mode documentation</a> before setup.</li>
+      <li><strong>Codex / Responses API:</strong> OpenAI Secure MCP Tunnel also supports these surfaces; keep Haru private and loopback-only.</li>
+      <li><strong>Other MCP clients:</strong> Haru itself is a Streamable HTTP MCP server. Any client that can reach <code>http://127.0.0.1:8765/mcp</code> over a trusted network (or through another authenticated private path you provide) can connect. <strong>OpenAI Secure MCP Tunnel itself is an OpenAI-specific transport.</strong></li>
+    </ul>
+  </section>
+
+  <section id="read-more">
+    <h2>Read More ⬇️</h2>
+    <ul class="resources" data-lang-only="zh">
+      <li><a href="https://github.com/kohaku4yz/haru-vps-mcp" target="_blank" rel="noreferrer">README</a> — 架构和安全边界</li>
+      <li><a href="https://github.com/kohaku4yz/haru-vps-mcp/blob/main/docs/WORKSPACE-BACKENDS.md" target="_blank" rel="noreferrer">WORKSPACE-BACKENDS.md</a> — filesystem / shell 组合和 systemd 隔离</li>
+      <li><a href="https://github.com/kohaku4yz/haru-vps-mcp/blob/main/docs/SECURE-TUNNEL.md" target="_blank" rel="noreferrer">SECURE-TUNNEL.md</a> — tunnel 运维边界</li>
+      <li><a href="https://github.com/kohaku4yz/haru-vps-mcp/blob/main/docs/OPERATIONS.md" target="_blank" rel="noreferrer">OPERATIONS.md</a> — 日常运维 / rollback / secrets</li>
+      <li><a href="https://github.com/kohaku4yz/haru-vps-mcp/blob/main/THIRD-PARTY.md" target="_blank" rel="noreferrer">THIRD-PARTY.md</a> — upstream pins / license / provenance</li>
+    </ul>
+    <ul class="resources" data-lang-only="en">
+      <li><a href="https://github.com/kohaku4yz/haru-vps-mcp" target="_blank" rel="noreferrer">README</a> — architecture and security boundary</li>
+      <li><a href="https://github.com/kohaku4yz/haru-vps-mcp/blob/main/docs/WORKSPACE-BACKENDS.md" target="_blank" rel="noreferrer">WORKSPACE-BACKENDS.md</a> — filesystem / shell composition and systemd isolation</li>
+      <li><a href="https://github.com/kohaku4yz/haru-vps-mcp/blob/main/docs/SECURE-TUNNEL.md" target="_blank" rel="noreferrer">SECURE-TUNNEL.md</a> — tunnel operations and trust boundary</li>
+      <li><a href="https://github.com/kohaku4yz/haru-vps-mcp/blob/main/docs/OPERATIONS.md" target="_blank" rel="noreferrer">OPERATIONS.md</a> — day-to-day operations / rollback / secrets</li>
+      <li><a href="https://github.com/kohaku4yz/haru-vps-mcp/blob/main/THIRD-PARTY.md" target="_blank" rel="noreferrer">THIRD-PARTY.md</a> — upstream pins / licenses / provenance</li>
+    </ul>
+  </section>
+
+  <section id="references" class="references">
+    <h2 data-lang-only="zh">参考</h2>
+    <h2 data-lang-only="en">References</h2>
+    <p><a href="https://developers.openai.com/api/docs/guides/secure-mcp-tunnels" target="_blank" rel="noreferrer">OpenAI — Secure MCP tunnels</a></p>
+    <p><a href="https://help.openai.com/en/articles/12584461-developer-mode-and-mcp-apps-in-chatgpt" target="_blank" rel="noreferrer">Developer mode and MCP apps in ChatGPT</a></p>
+  </section>
+
+  <footer>Haru VPS MCP · a small private doorway into a disposable Linux workspace.</footer>
+</main>
+<script>
+const languageMeta={
+  zh:{htmlLang:'zh-CN',title:'Haru VPS MCP — 自托管指南',description:'Haru VPS MCP：把 filesystem / shell 收进独立 workspace，再通过 OpenAI Secure MCP Tunnel 给 ChatGPT 使用的自托管指南。'},
+  en:{htmlLang:'en',title:'Haru VPS MCP — Self-hosting guide',description:'Haru VPS MCP: a self-hosting guide for putting filesystem and shell inside a disposable workspace and connecting it to ChatGPT through OpenAI Secure MCP Tunnel.'}
+};
+function applyLanguage(lang){
+  if(!languageMeta[lang]) lang='zh';
+  const meta=languageMeta[lang];
+  document.documentElement.dataset.uiLang=lang;
+  document.documentElement.lang=meta.htmlLang;
+  document.title=meta.title;
+  document.querySelector('meta[name="description"]').setAttribute('content',meta.description);
+  document.querySelector('.topline').setAttribute('aria-label',lang==='zh'?'面包屑':'Breadcrumb');
+  document.querySelector('.toc-dock').setAttribute('aria-label',lang==='zh'?'页面目录':'Table of contents');
+  document.querySelector('.toc-rail').setAttribute('aria-label',lang==='zh'?'目录快速导航':'Quick section navigation');
+  document.querySelector('.toc-panel').setAttribute('aria-label',lang==='zh'?'页面目录展开':'Expanded table of contents');
+  document.querySelectorAll('[data-label-zh][data-label-en]').forEach(a=>{
+    const label=a.dataset[lang==='zh'?'labelZh':'labelEn'];
+    a.setAttribute('aria-label',label);
+    a.setAttribute('title',label);
+    if(a.closest('.toc-panel')) a.textContent=label;
+  });
+  document.querySelectorAll('[data-lang-set]').forEach(btn=>{
+    const active=btn.dataset.langSet===lang;
+    btn.classList.toggle('active',active);
+    btn.setAttribute('aria-pressed',String(active));
+  });
+  try{localStorage.setItem('haru-doc-lang',lang)}catch{}
+}
+document.querySelectorAll('[data-lang-set]').forEach(btn=>btn.addEventListener('click',()=>applyLanguage(btn.dataset.langSet)));
+let initialLanguage='zh';
+try{initialLanguage=localStorage.getItem('haru-doc-lang')||'zh'}catch{}
+applyLanguage(initialLanguage);
+
+document.querySelectorAll('.copy').forEach(btn=>{
+  btn.addEventListener('click',async()=>{
+    const text=btn.parentElement.querySelector('pre').innerText;
+    try{await navigator.clipboard.writeText(text);btn.textContent='Copied';setTimeout(()=>btn.textContent='Copy',1100)}
+    catch{btn.textContent='Select'}
+  });
+});
+const allLinks=[...document.querySelectorAll('.toc-rail a, .toc-panel a')];
+const ids=[...new Set(allLinks.map(a=>a.getAttribute('href')).filter(Boolean))];
+const sections=ids.map(id=>document.querySelector(id)).filter(Boolean);
+const setActive=id=>allLinks.forEach(a=>a.classList.toggle('active',a.getAttribute('href')===id));
+const io=new IntersectionObserver(entries=>{
+  const visible=entries.filter(e=>e.isIntersecting).sort((a,b)=>a.boundingClientRect.top-b.boundingClientRect.top);
+  if(visible[0]) setActive('#'+visible[0].target.id);
+},{rootMargin:'-15% 0px -72% 0px',threshold:[0,.1,.5]});
+sections.forEach(s=>io.observe(s));
+setActive('#prepare');
+</script>
+</body>
+</html>
