@@ -57,6 +57,7 @@ pre code{color:inherit;background:transparent;font-size:inherit}
 .code-wrap:hover .copy,.copy:focus-visible{opacity:1}.copy:hover{background:#fff}
 .callout{margin:16px 0;padding:16px 18px;border-radius:3px;background:var(--callout-bg);display:grid;grid-template-columns:24px 1fr;gap:10px}.callout .icon{line-height:1.55}
 .architecture{margin:26px 0 0}.architecture figcaption{margin-top:7px;color:var(--muted);font-size:.82rem;text-align:left}
+.guide-shot{display:block;width:100%;height:auto;margin:18px 0 22px;border:1px solid var(--border);border-radius:8px}.guide-shot.tall{max-width:560px}
 .checklist{list-style:none;padding-left:0}.checklist li{display:grid;grid-template-columns:18px 1fr;gap:9px;margin:7px 0}.box{width:15px;height:15px;margin-top:5px;border:1.5px solid #9b9a97;border-radius:2px;background:#fff}
 .resources{padding-left:1.35em}.resources li{margin:6px 0}.references{overflow-wrap:anywhere}
 footer{margin-top:52px;color:var(--muted);font-size:.82rem}
@@ -225,6 +226,7 @@ sudo systemctl --no-pager --full status haru-workspace.service haru-mcp.service<
       <li>Create a runtime key for <code>tunnel-client</code> under <a href="https://platform.openai.com/settings/organization/api-keys" target="_blank" rel="noreferrer">Runtime API keys</a>. The principal running the client / selecting the tunnel in ChatGPT needs Tunnels <strong>Read + Use</strong>. Do not hard-code an <code>all</code> role here, and keep the key out of Git.</li>
       <li>Download the currently supported <code>tunnel-client</code> from the Tunnels page, or use the <a href="https://github.com/openai/tunnel-client/releases" target="_blank" rel="noreferrer">latest openai/tunnel-client release</a>. <strong>Do not pin this guide to v0.0.11</strong>; follow the latest supported release.</li>
     </ol>
+    <img class="guide-shot" src="assets/openai-create-tunnel.png" alt="OpenAI Platform Create tunnel dialog" loading="lazy" decoding="async">
     <p data-lang-only="zh">先做 foreground canary：</p>
     <p data-lang-only="en">First, run a foreground canary:</p>
     <div class="code-wrap"><button class="copy" type="button">Copy</button><pre><code>export CONTROL_PLANE_API_KEY='sk-...'
@@ -252,6 +254,7 @@ tunnel-client run --profile haru-vps-mcp</code></pre></div>
       <li>Haru does not add its own OAuth layer, so if the UI asks for app-level authentication choose <strong>None</strong>. “None” only describes the Haru server behind the tunnel; remote access is still protected by Secure MCP Tunnel and is not anonymously public.</li>
       <li>Scan tools / Create. In a new chat, select the app (or @ mention it), call <code>health</code>, then make one harmless <code>workspace_list_directory</code> call.</li>
     </ol>
+    <img class="guide-shot tall" src="assets/chatgpt-tunnel-plugin.png" alt="ChatGPT developer-mode app Tunnel configuration" loading="lazy" decoding="async">
   </section>
 
   <section id="acceptance">
