@@ -7,13 +7,42 @@ Wants=network-online.target
 Type=simple
 User=haru
 Group=haru
+WorkingDirectory=/opt/haru-mcp
+UMask=0077
+
+Environment=PYTHONDONTWRITEBYTECODE=1
 EnvironmentFile=/etc/haru-mcp/haru-mcp.env
 ExecStart=/opt/haru-mcp/venv/bin/haru-mcp
 Restart=on-failure
+RestartSec=5s
+
+# The gateway only needs its own files and loopback networking to the
+# workspace backend. These controls are deliberately portable systemd
+# hardening rather than host-specific production policy.
 NoNewPrivileges=true
+CapabilityBoundingSet=
+AmbientCapabilities=
 PrivateTmp=true
+PrivateDevices=true
 ProtectSystem=strict
 ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictRealtime=true
+RestrictNamespaces=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+SystemCallArchitectures=native
+
+IPAddressAllow=127.0.0.0/8
+IPAddressAllow=::1/128
+IPAddressDeny=any
+
+ReadOnlyPaths=/opt/haru-mcp
 
 [Install]
 WantedBy=multi-user.target
