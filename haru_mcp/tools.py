@@ -8,13 +8,14 @@ from typing import Any, Final
 import anyio
 from mcp import ClientSession, types
 from mcp.client.streamable_http import streamablehttp_client
-from typing_extensions import TypedDict
+from typing_extensions import NotRequired, TypedDict
 
 from . import __version__
 from .settings import SERVICE_NAME, Settings
 
 logger = logging.getLogger(__name__)
 _BACKEND_CALL_TIMEOUT_SECONDS: Final[float] = 30.0
+_FILE_IMPORT_CALL_TIMEOUT_SECONDS: Final[float] = 90.0
 
 
 class HealthResult(TypedDict):
@@ -22,6 +23,15 @@ class HealthResult(TypedDict):
     version: str
     status: str
     timestamp_utc: str
+
+
+class OpenAIFileRef(TypedDict):
+    """ChatGPT host file reference supplied via ``openai/fileParams``."""
+
+    download_url: str
+    file_id: str
+    mime_type: NotRequired[str]
+    file_name: NotRequired[str]
 
 
 def health() -> HealthResult:
@@ -40,9 +50,15 @@ def _backend_failure() -> types.CallToolResult:
     )
 
 
-async def delegate_backend_tool(endpoint: str, tool_name: str, arguments: dict[str, Any]) -> types.CallToolResult:
+async def delegate_backend_tool(
+    endpoint: str,
+    tool_name: str,
+    arguments: dict[str, Any],
+    *,
+    timeout_seconds: float = _BACKEND_CALL_TIMEOUT_SECONDS,
+) -> types.CallToolResult:
     try:
-        with anyio.fail_after(_BACKEND_CALL_TIMEOUT_SECONDS):
+        with anyio.fail_after(timeout_seconds):
             async with streamablehttp_client(endpoint) as (read, write, _):
                 async with ClientSession(read, write) as session:
                     await session.initialize()
@@ -74,6 +90,20 @@ async def workspace_move_file(settings: Settings, source: str, destination: str)
 
 async def workspace_get_file_info(settings: Settings, path: str):
     return await delegate_backend_tool(settings.workspace_filesystem_url, "get_file_info", {"path": path})
+
+
+async def workspace_import_chatgpt_file(
+    settings: Settings,
+    file: OpenAIFileRef,
+    destination: str,
+    overwrite: bool = False,
+):
+    return await delegate_backend_tool(
+        settings.workspace_file_ingress_url,
+        "import_chatgpt_file",
+        {"file": dict(file), "destination": destination, "overwrite": overwrite},
+        timeout_seconds=_FILE_IMPORT_CALL_TIMEOUT_SECONDS,
+    )
 
 
 async def shell_execute(settings: Settings, command: str, timeout_ms: int = 5000):

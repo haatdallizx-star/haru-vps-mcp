@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-python -m compileall -q haru_mcp tests deploy/verify-examples.py
+python -m compileall -q haru_mcp tests deploy
 python - <<'PY'
 from haru_mcp.settings import load_settings
 cfg = load_settings(env={})
 assert cfg.host == "127.0.0.1"
 assert cfg.workspace_filesystem_url.startswith("http://127.0.0.1:")
 assert cfg.workspace_shell_url.startswith("http://127.0.0.1:")
+assert cfg.workspace_file_ingress_url.startswith("http://127.0.0.1:")
 print("settings_loopback_default=PASS")
 PY
 

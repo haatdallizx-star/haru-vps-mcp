@@ -12,10 +12,12 @@ from mcp.server.transport_security import TransportSecuritySettings
 from .settings import SERVICE_NAME, Settings, load_settings
 from .tools import (
     HealthResult,
+    OpenAIFileRef,
     health,
     shell_execute,
     workspace_edit_file,
     workspace_get_file_info,
+    workspace_import_chatgpt_file,
     workspace_list_directory,
     workspace_move_file,
     workspace_read_text_file,
@@ -87,6 +89,23 @@ def build_server(settings: Settings | None = None) -> FastMCP:
     @server.tool(name="workspace_get_file_info")
     async def get_file_info_tool(path: str) -> types.CallToolResult:
         return await workspace_get_file_info(cfg, path)
+
+    @server.tool(
+        name="workspace_import_chatgpt_file",
+        description=(
+            "Import one file attached to or generated in the current ChatGPT conversation "
+            "into the Haru workspace. Pass a relative destination path whose parent "
+            "directory already exists. The ChatGPT host supplies the file reference "
+            "automatically; do not construct download URLs manually."
+        ),
+        meta={"openai/fileParams": ["file"]},
+    )
+    async def import_chatgpt_file_tool(
+        file: OpenAIFileRef,
+        destination: str,
+        overwrite: bool = False,
+    ) -> types.CallToolResult:
+        return await workspace_import_chatgpt_file(cfg, file, destination, overwrite)
 
     @server.tool(name="shell_execute")
     async def shell_execute_tool(command: str, timeout_ms: int = 5000) -> types.CallToolResult:

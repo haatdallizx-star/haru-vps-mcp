@@ -2,7 +2,9 @@
   "mcpServers": {
     "filesystem": {
       "command": "/opt/haru-workspace/node/node_modules/.bin/mcp-server-filesystem",
-      "args": ["/srv/haru-workspace"],
+      "args": [
+        "/srv/haru-workspace"
+      ],
       "env": {
         "HOME": "/var/lib/haru-workspace/home",
         "PATH": "/opt/haru-workspace/node/node_modules/.bin:/usr/bin:/bin",
@@ -12,6 +14,17 @@
     "shell": {
       "command": "/opt/haru-workspace/node/node_modules/.bin/shell-exec-mcp",
       "args": [],
+      "env": {
+        "HOME": "/var/lib/haru-workspace/home",
+        "PATH": "/opt/haru-workspace/node/node_modules/.bin:/usr/bin:/bin",
+        "TMPDIR": "/var/lib/haru-workspace/tmp"
+      }
+    },
+    "file-ingress": {
+      "command": "/opt/haru-workspace/proxy/bin/python",
+      "args": [
+        "/opt/haru-workspace/file_ingress_server.py"
+      ],
       "env": {
         "HOME": "/var/lib/haru-workspace/home",
         "PATH": "/opt/haru-workspace/node/node_modules/.bin:/usr/bin:/bin",

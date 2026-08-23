@@ -12,6 +12,7 @@ DEFAULT_PORT: Final[int] = 8765
 DEFAULT_PATH: Final[str] = "/mcp"
 DEFAULT_WORKSPACE_FILESYSTEM_URL: Final[str] = "http://127.0.0.1:8766/servers/filesystem/mcp"
 DEFAULT_WORKSPACE_SHELL_URL: Final[str] = "http://127.0.0.1:8766/servers/shell/mcp"
+DEFAULT_WORKSPACE_FILE_INGRESS_URL: Final[str] = "http://127.0.0.1:8766/servers/file-ingress/mcp"
 _LOOPBACK_HOSTS: Final[frozenset[str]] = frozenset({"127.0.0.1", "localhost", "::1"})
 
 
@@ -26,6 +27,7 @@ class Settings:
     path: str
     workspace_filesystem_url: str
     workspace_shell_url: str
+    workspace_file_ingress_url: str
     public_host: str | None = None
     public_origin: str | None = None
 
@@ -99,5 +101,19 @@ def load_settings(*, env: dict[str, str] | None = None) -> Settings:
         field="HARU_MCP_WORKSPACE_SHELL_URL",
         required_path="/servers/shell/mcp",
     )
+    file_ingress_url = validate_loopback_http_url(
+        raw_env.get("HARU_MCP_WORKSPACE_FILE_INGRESS_URL", DEFAULT_WORKSPACE_FILE_INGRESS_URL),
+        field="HARU_MCP_WORKSPACE_FILE_INGRESS_URL",
+        required_path="/servers/file-ingress/mcp",
+    )
     public_host, public_origin = _public_transport(raw_env)
-    return Settings(host, port, path, filesystem_url, shell_url, public_host, public_origin)
+    return Settings(
+        host=host,
+        port=port,
+        path=path,
+        workspace_filesystem_url=filesystem_url,
+        workspace_shell_url=shell_url,
+        workspace_file_ingress_url=file_ingress_url,
+        public_host=public_host,
+        public_origin=public_origin,
+    )
