@@ -69,17 +69,22 @@ def verify_static() -> None:
             "AmbientCapabilities=",
             "RestrictSUIDSGID=true",
             "LockPersonality=true",
+            "ExecStartPre=/usr/bin/test -r /opt/haru-workspace/file_ingress_server.py",
         ),
         "workspace unit",
     )
 
     servers = config.get("mcpServers")
-    if set(servers or {}) != {"filesystem", "shell"}:
-        raise SystemExit("servers.json: expected exactly filesystem and shell")
+    if set(servers or {}) != {"filesystem", "shell", "file-ingress"}:
+        raise SystemExit("servers.json: expected exactly filesystem, shell, and file-ingress")
     if servers["filesystem"].get("args") != ["/srv/haru-workspace"]:
         raise SystemExit("servers.json: filesystem must be scoped to /srv/haru-workspace")
     if servers["shell"].get("args") != []:
         raise SystemExit("servers.json: shell example should not inject extra arguments")
+    if servers["file-ingress"].get("command") != "/opt/haru-workspace/proxy/bin/python":
+        raise SystemExit("servers.json: file-ingress must use the workspace Python environment")
+    if servers["file-ingress"].get("args") != ["/opt/haru-workspace/file_ingress_server.py"]:
+        raise SystemExit("servers.json: file-ingress must point at the reviewed child script")
     if any("cwd" in server for server in servers.values()):
         raise SystemExit("servers.json: mcp-proxy 0.12.0 named servers must not claim per-server cwd support")
     if "--cwd" in workspace:

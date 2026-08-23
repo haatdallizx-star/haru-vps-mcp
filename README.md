@@ -15,14 +15,14 @@ ChatGPT / MCP client
  Haru MCP gateway
    127.0.0.1:8765
         |
-   +----+----+
-   |         |
-   v         v
-filesystem  shell
- backend    backend
- loopback   loopback
-   |         |
-   +----v----+
+   +------+------+
+   |      |      |
+   v      v      v
+filesystem shell file-ingress
+ backend   backend backend
+ loopback  loopback loopback
+   |      |      |
+   +------v------+
  isolated workspace
 ```
 
@@ -32,6 +32,8 @@ Haru MCP exposes powerful workspace filesystem and shell tools, so treat the end
 
 - The gateway refuses non-loopback bind addresses.
 - Workspace backend URLs must be explicit loopback HTTP endpoints and cannot contain credentials.
+- ChatGPT file ingress accepts only host-supplied file references, restricts downloads to approved OpenAI storage hosts over HTTPS, pins validated public DNS addresses before connecting, caps imports at 100 MiB, and writes only beneath the workspace root.
+- Do not hand-craft file download URLs or treat raw client/sandbox paths as file references. The MCP host is responsible for supplying the `file` object declared through `openai/fileParams`.
 - The backend itself gets no second public hostname; it stays behind the gateway on loopback.
 - Optional public Host/Origin allowlists are request/transport hardening only. **They are not authentication.**
 - `deploy/Caddyfile.example` fails closed with HTTP 403. Replace it only for a separately reviewed authenticated ingress design.
@@ -72,11 +74,12 @@ By default, the gateway listens at `127.0.0.1:8765/mcp` and delegates to:
 ```text
 http://127.0.0.1:8766/servers/filesystem/mcp
 http://127.0.0.1:8766/servers/shell/mcp
+http://127.0.0.1:8766/servers/file-ingress/mcp
 ```
 
-Those two endpoints are a **separate workspace-backend composition**. To build them from the selected upstream components, follow [`docs/WORKSPACE-BACKENDS.md`](docs/WORKSPACE-BACKENDS.md).
+Those endpoints are a **separate workspace-backend composition**. To build them from the selected upstream components plus Haru's bounded file-ingress child, follow [`docs/WORKSPACE-BACKENDS.md`](docs/WORKSPACE-BACKENDS.md).
 
-The public tool surface is deliberately small: gateway health, workspace directory listing/read/write/edit/move/stat, and isolated shell execution delegated to the loopback backends.
+The public tool surface is deliberately small: gateway health, workspace directory listing/read/write/edit/move/stat, ChatGPT file import, and isolated shell execution delegated to the loopback backends. `workspace_import_chatgpt_file` is declared with `openai/fileParams` so the ChatGPT host can replace a current-conversation file with a short-lived file reference before the MCP call.
 
 ## Operator documentation
 

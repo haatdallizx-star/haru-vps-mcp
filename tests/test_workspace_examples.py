@@ -10,8 +10,10 @@ WORKSPACE = ROOT / "deploy" / "workspace"
 def test_workspace_servers_example_is_scoped_and_has_no_fake_cwd():
     data = json.loads((WORKSPACE / "servers.json.example").read_text())
     servers = data["mcpServers"]
-    assert set(servers) == {"filesystem", "shell"}
+    assert set(servers) == {"filesystem", "shell", "file-ingress"}
     assert servers["filesystem"]["args"] == ["/srv/haru-workspace"]
+    assert servers["file-ingress"]["command"] == "/opt/haru-workspace/proxy/bin/python"
+    assert servers["file-ingress"]["args"] == ["/opt/haru-workspace/file_ingress_server.py"]
     for child in servers.values():
         assert "cwd" not in child
         assert child["env"]["HOME"] == "/var/lib/haru-workspace/home"
@@ -28,6 +30,7 @@ def test_workspace_unit_represents_isolation_and_containment_boundaries():
         "Environment=HOME=/var/lib/haru-workspace/home",
         "Environment=TMPDIR=/var/lib/haru-workspace/tmp",
         "--host 127.0.0.1",
+        "test -r /opt/haru-workspace/file_ingress_server.py",
         "KillMode=control-group",
         "NoNewPrivileges=true",
         "PrivateTmp=true",
