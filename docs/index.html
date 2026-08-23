@@ -4,7 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta name="color-scheme" content="light" />
-<meta name="description" content="Haru VPS MCP：把 filesystem / shell 收进独立 workspace，再通过 OpenAI Secure MCP Tunnel 给 ChatGPT 使用的自托管指南。" />
+<meta name="description" content="Haru VPS MCP：把 filesystem / shell / file import 收进独立 workspace，再通过 OpenAI Secure MCP Tunnel 给 ChatGPT 使用的自托管指南。" />
 <title>Haru VPS MCP — 自托管指南</title>
 <style>
 :root{
@@ -116,8 +116,8 @@ footer{margin-top:52px;color:var(--muted);font-size:.82rem}
     <h1>Haru VPS MCP</h1>
     <blockquote class="subtitle">A mini tunnel to a mini computer for ChatGPT.</blockquote>
     <div class="lede">
-      <p data-lang-only="zh">这是一个给 AI 一台“小电脑”的自托管 MCP Gateway。它把 filesystem / shell 能力收进一个<strong>独立、可丢弃的 workspace</strong>，再通过 MCP 让 ChatGPT 或其他可信客户端使用；host 本身不是 workspace，Haru 和 workspace backend 也都默认只监听 loopback。</p>
-      <p data-lang-only="en">This is a self-hosted MCP gateway that gives an AI a tiny computer of its own. It puts filesystem / shell capabilities inside an <strong>independent, disposable workspace</strong>, then exposes them over MCP to ChatGPT or another trusted client. The host itself is not the workspace, and both Haru and the workspace backend bind to loopback by default.</p>
+      <p data-lang-only="zh">这是一个给 AI 一台“小电脑”的自托管 MCP Gateway。它把 filesystem / shell / file import 能力收进一个<strong>独立、可丢弃的 workspace</strong>，再通过 MCP 让 ChatGPT 或其他可信客户端使用；host 本身不是 workspace，Haru 和 workspace backend 也都默认只监听 loopback。</p>
+      <p data-lang-only="en">This is a self-hosted MCP gateway that gives an AI a tiny computer of its own. It puts filesystem / shell / file import capabilities inside an <strong>independent, disposable workspace</strong>, then exposes them over MCP to ChatGPT or another trusted client. The host itself is not the workspace, and both Haru and the workspace backend bind to loopback by default.</p>
     </div>
     <figure class="architecture">
       <pre><code>                    your Linux machine
@@ -130,12 +130,12 @@ MCP     │  127.0.0.1:8765                 │
         │          v                      │
         │  workspace backends             │
         │  127.0.0.1:8766                 │
-        │       |        |                │
-        │       v        v                │
-        │   filesystem   shell            │
-        │       \        /                │
-        │        \      /                 │
-        │         v    v                  │
+        │      |       |       |          │
+        │      v       v       v          │
+        │ filesystem  shell  file import   │
+        │      \       |       /          │
+        │       \      |      /           │
+        │        v      v     v            │
         │     /srv/haru-workspace         │
         │                                 │
         └─────────────────────────────────┘</code></pre>
@@ -205,8 +205,8 @@ sudo install -m 0644 /opt/haru-mcp/deploy/workspace/haru-workspace.service.examp
     <div class="code-wrap"><button class="copy" type="button">Copy</button><pre><code>sudo systemctl daemon-reload
 sudo systemctl enable --now haru-workspace.service haru-mcp.service
 sudo systemctl --no-pager --full status haru-workspace.service haru-mcp.service</code></pre></div>
-    <p data-lang-only="zh">默认就是 <code>127.0.0.1:8765/mcp</code> → <code>127.0.0.1:8766</code> 的 filesystem / shell backends。需要换版本时先看公开库的 <code>THIRD-PARTY.md</code>，不要随手升级其中一个 pin。</p>
-    <p data-lang-only="en">By default, <code>127.0.0.1:8765/mcp</code> delegates to the filesystem / shell backends on <code>127.0.0.1:8766</code>. Before changing versions, check the public repo's <code>THIRD-PARTY.md</code>; do not casually upgrade one pin in isolation.</p>
+    <p data-lang-only="zh">默认就是 <code>127.0.0.1:8765/mcp</code> → <code>127.0.0.1:8766</code> 的 filesystem / shell / file-ingress backends。需要换版本时先看公开库的 <code>THIRD-PARTY.md</code>，不要随手升级其中一个 pin。</p>
+    <p data-lang-only="en">By default, <code>127.0.0.1:8765/mcp</code> delegates to the filesystem / shell / file-ingress backends on <code>127.0.0.1:8766</code>. Before changing versions, check the public repo's <code>THIRD-PARTY.md</code>; do not casually upgrade one pin in isolation.</p>
   </section>
 
   <section id="tunnel">
@@ -293,14 +293,14 @@ tunnel-client run --profile haru-vps-mcp</code></pre></div>
     <h2>Read More ⬇️</h2>
     <ul class="resources" data-lang-only="zh">
       <li><a href="https://github.com/kohaku4yz/haru-vps-mcp" target="_blank" rel="noreferrer">README</a> — 架构和安全边界</li>
-      <li><a href="https://github.com/kohaku4yz/haru-vps-mcp/blob/main/docs/WORKSPACE-BACKENDS.md" target="_blank" rel="noreferrer">WORKSPACE-BACKENDS.md</a> — filesystem / shell 组合和 systemd 隔离</li>
+      <li><a href="https://github.com/kohaku4yz/haru-vps-mcp/blob/main/docs/WORKSPACE-BACKENDS.md" target="_blank" rel="noreferrer">WORKSPACE-BACKENDS.md</a> — workspace backends 和 systemd 隔离</li>
       <li><a href="https://github.com/kohaku4yz/haru-vps-mcp/blob/main/docs/SECURE-TUNNEL.md" target="_blank" rel="noreferrer">SECURE-TUNNEL.md</a> — tunnel 运维边界</li>
       <li><a href="https://github.com/kohaku4yz/haru-vps-mcp/blob/main/docs/OPERATIONS.md" target="_blank" rel="noreferrer">OPERATIONS.md</a> — 日常运维 / rollback / secrets</li>
       <li><a href="https://github.com/kohaku4yz/haru-vps-mcp/blob/main/THIRD-PARTY.md" target="_blank" rel="noreferrer">THIRD-PARTY.md</a> — upstream pins / license / provenance</li>
     </ul>
     <ul class="resources" data-lang-only="en">
       <li><a href="https://github.com/kohaku4yz/haru-vps-mcp" target="_blank" rel="noreferrer">README</a> — architecture and security boundary</li>
-      <li><a href="https://github.com/kohaku4yz/haru-vps-mcp/blob/main/docs/WORKSPACE-BACKENDS.md" target="_blank" rel="noreferrer">WORKSPACE-BACKENDS.md</a> — filesystem / shell composition and systemd isolation</li>
+      <li><a href="https://github.com/kohaku4yz/haru-vps-mcp/blob/main/docs/WORKSPACE-BACKENDS.md" target="_blank" rel="noreferrer">WORKSPACE-BACKENDS.md</a> — workspace backends and systemd isolation</li>
       <li><a href="https://github.com/kohaku4yz/haru-vps-mcp/blob/main/docs/SECURE-TUNNEL.md" target="_blank" rel="noreferrer">SECURE-TUNNEL.md</a> — tunnel operations and trust boundary</li>
       <li><a href="https://github.com/kohaku4yz/haru-vps-mcp/blob/main/docs/OPERATIONS.md" target="_blank" rel="noreferrer">OPERATIONS.md</a> — day-to-day operations / rollback / secrets</li>
       <li><a href="https://github.com/kohaku4yz/haru-vps-mcp/blob/main/THIRD-PARTY.md" target="_blank" rel="noreferrer">THIRD-PARTY.md</a> — upstream pins / licenses / provenance</li>
@@ -318,8 +318,8 @@ tunnel-client run --profile haru-vps-mcp</code></pre></div>
 </main>
 <script>
 const languageMeta={
-  zh:{htmlLang:'zh-CN',title:'Haru VPS MCP — 自托管指南',description:'Haru VPS MCP：把 filesystem / shell 收进独立 workspace，再通过 OpenAI Secure MCP Tunnel 给 ChatGPT 使用的自托管指南。'},
-  en:{htmlLang:'en',title:'Haru VPS MCP — Self-hosting guide',description:'Haru VPS MCP: a self-hosting guide for putting filesystem and shell inside a disposable workspace and connecting it to ChatGPT through OpenAI Secure MCP Tunnel.'}
+  zh:{htmlLang:'zh-CN',title:'Haru VPS MCP — 自托管指南',description:'Haru VPS MCP：把 filesystem / shell / file import 收进独立 workspace，再通过 OpenAI Secure MCP Tunnel 给 ChatGPT 使用的自托管指南。'},
+  en:{htmlLang:'en',title:'Haru VPS MCP — Self-hosting guide',description:'Haru VPS MCP: a self-hosting guide for putting filesystem, shell, and file import inside a disposable workspace and connecting it to ChatGPT through OpenAI Secure MCP Tunnel.'}
 };
 function applyLanguage(lang){
   if(!languageMeta[lang]) lang='zh';

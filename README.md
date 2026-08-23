@@ -4,7 +4,7 @@
 
 **Setup guide:** [Notion-style web note (中文 / English)](https://kohaku4yz.github.io/haru-vps-mcp/)
 
-Haru VPS MCP is a small self-hosted MCP gateway for an isolated VPS workspace. It gives an MCP client a narrow filesystem/shell facade without making the host itself the workspace.
+Haru VPS MCP is a small self-hosted MCP gateway for an isolated VPS workspace. It gives an MCP client a narrow filesystem/shell/file-import facade without making the host itself the workspace.
 
 ```text
 ChatGPT / MCP client
@@ -83,7 +83,7 @@ The public tool surface is deliberately small: gateway health, workspace directo
 
 ## Operator documentation
 
-- [`docs/WORKSPACE-BACKENDS.md`](docs/WORKSPACE-BACKENDS.md) — build and operate the loopback filesystem/shell composition.
+- [`docs/WORKSPACE-BACKENDS.md`](docs/WORKSPACE-BACKENDS.md) — build and operate the loopback filesystem/shell/file-ingress composition.
 - [`docs/SECURE-TUNNEL.md`](docs/SECURE-TUNNEL.md) — server-side Secure MCP Tunnel boundary, service supervision, fail-closed recovery, and real-client acceptance.
 - [`docs/OPERATIONS.md`](docs/OPERATIONS.md) — gateway service operations, layered health, upgrades/rollback, repository exact-head discipline, process hygiene, and secrets.
 - [`deploy/haru-mcp.service.example`](deploy/haru-mcp.service.example) — minimal hardened systemd starting point.

@@ -1,6 +1,6 @@
 # Workspace backends
 
-Haru VPS MCP is a gateway facade. Its filesystem and shell tools delegate to **separate MCP servers on loopback**. This guide shows a public-safe reference composition using the upstream components recorded in [`THIRD-PARTY.md`](../THIRD-PARTY.md).
+Haru VPS MCP is a gateway facade. Its filesystem, shell, and file-import tools delegate to **separate MCP servers on loopback**. This guide shows a public-safe reference composition using the upstream components recorded in [`THIRD-PARTY.md`](../THIRD-PARTY.md).
 
 The intended boundary is:
 

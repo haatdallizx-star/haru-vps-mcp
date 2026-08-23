@@ -20,6 +20,14 @@ def require_lines(text: str, expected: tuple[str, ...], label: str) -> None:
         raise SystemExit(f"{label}: missing expected lines: {missing}")
 
 
+def _verify_public_page() -> None:
+    page = (ROOT / "docs" / "index.html").read_text()
+    required = ("filesystem", "shell", "file import", "file-ingress")
+    missing = [term for term in required if term not in page]
+    if missing:
+        raise SystemExit(f"docs/index.html: missing current workspace capabilities: {missing}")
+
+
 def verify_static() -> None:
     gateway = GATEWAY_UNIT.read_text(encoding="utf-8")
     workspace = WORKSPACE_UNIT.read_text(encoding="utf-8")
@@ -153,5 +161,6 @@ def verify_systemd_if_available() -> None:
 
 
 if __name__ == "__main__":
+    _verify_public_page()
     verify_static()
     verify_systemd_if_available()

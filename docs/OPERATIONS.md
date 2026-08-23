@@ -61,11 +61,11 @@ Do not restart unrelated services as part of a routine Haru change.
 Keep these signals distinct:
 
 1. **Gateway health:** Haru process/protocol is alive.
-2. **Workspace backend health:** filesystem/shell proxy and stdio descendants are alive and scoped correctly.
+2. **Workspace backend health:** filesystem/shell/file-ingress proxy children are alive and scoped correctly.
 3. **Tunnel health/readiness:** the private remote path is connected where supported by the current tunnel client.
 4. **End-to-end acceptance:** a real MCP client can discover tools and make one harmless call.
 
-A green gateway health check does not prove the shell/filesystem backends work. A green local tunnel process does not prove a remote client can invoke Haru.
+A green gateway health check does not prove the workspace backends work. A green local tunnel process does not prove a remote client can invoke Haru.
 
 When delegated backend calls fail, Haru should report a backend failure rather than silently changing routes or opening a public fallback.
 
