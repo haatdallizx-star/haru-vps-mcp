@@ -49,6 +49,32 @@ def sleep(uuid="sleep-1"):
     }
 
 
+def _insert_legacy_numeric(conn, *, uuid, sample_type="heart_rate"):
+    conn.execute(
+        """
+        INSERT INTO healthkit_numeric_samples (
+            uuid, type, value, unit, start_at, end_at, source_name, source_bundle,
+            device, metadata_json, queued_at, received_at
+        ) VALUES (?, ?, 72, 'bpm', '2026-08-31T05:00:00Z', '2026-08-31T05:00:05Z',
+                  NULL, NULL, NULL, '{}', '2026-08-31T05:00:10Z', '2026-08-31T05:00:20Z')
+        """,
+        (uuid, sample_type),
+    )
+
+
+def _insert_legacy_sleep(conn, *, uuid):
+    conn.execute(
+        """
+        INSERT INTO healthkit_sleep_samples (
+            uuid, stage, stage_raw, start_at, end_at, source_name, source_bundle,
+            device, metadata_json, queued_at, received_at
+        ) VALUES (?, 'core', 'core', '2026-08-31T00:00:00Z', '2026-08-31T01:00:00Z',
+                  NULL, NULL, NULL, '{}', '2026-08-31T01:00:05Z', '2026-08-31T05:00:20Z')
+        """,
+        (uuid,),
+    )
+
+
 def test_initialize_creates_only_healthkit_tables(tmp_path):
     path = tmp_path / "healthkit.sqlite3"
     store = HealthKitStore(path)
@@ -62,6 +88,70 @@ def test_initialize_creates_only_healthkit_tables(tmp_path):
         "healthkit_ingest_status",
     }
     assert not any(name in tables for name in {"health_samples", "heart_rate", "sleep", "steps"})
+
+
+def test_initialize_backfills_clean_pre_registry_legacy_database(tmp_path):
+    path = tmp_path / "healthkit.sqlite3"
+    store = HealthKitStore(path)
+    store.initialize()
+    with sqlite3.connect(path) as conn:
+        conn.execute("DROP TABLE healthkit_sample_uuids")
+        _insert_legacy_numeric(conn, uuid="legacy-numeric")
+        _insert_legacy_sleep(conn, uuid="legacy-sleep")
+
+    store.initialize()
+
+    with sqlite3.connect(path) as conn:
+        registry = conn.execute(
+            "SELECT uuid, sample_type FROM healthkit_sample_uuids ORDER BY uuid"
+        ).fetchall()
+    assert registry == [("legacy-numeric", "heart_rate"), ("legacy-sleep", "sleep")]
+
+
+def test_initialize_rejects_cross_table_legacy_uuid_collision_without_mutating_data(tmp_path):
+    path = tmp_path / "healthkit.sqlite3"
+    store = HealthKitStore(path)
+    store.initialize()
+    with sqlite3.connect(path) as conn:
+        conn.execute("DROP TABLE healthkit_sample_uuids")
+        _insert_legacy_numeric(conn, uuid="sensitive-collision-uuid")
+        _insert_legacy_sleep(conn, uuid="sensitive-collision-uuid")
+
+    with pytest.raises(RuntimeError) as caught:
+        store.initialize()
+
+    assert str(caught.value) == "HealthKit database integrity check failed"
+    assert "sensitive-collision-uuid" not in str(caught.value)
+    with sqlite3.connect(path) as conn:
+        tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        assert conn.execute("SELECT COUNT(*) FROM healthkit_numeric_samples").fetchone()[0] == 1
+        assert conn.execute("SELECT COUNT(*) FROM healthkit_sleep_samples").fetchone()[0] == 1
+    assert "healthkit_sample_uuids" not in tables
+
+
+@pytest.mark.parametrize(
+    ("stored_kind", "registry_type"),
+    [("numeric", "sleep"), ("sleep", "heart_rate")],
+)
+def test_initialize_rejects_existing_registry_type_mismatch(tmp_path, stored_kind, registry_type):
+    path = tmp_path / "healthkit.sqlite3"
+    store = HealthKitStore(path)
+    store.initialize()
+    with sqlite3.connect(path) as conn:
+        if stored_kind == "numeric":
+            _insert_legacy_numeric(conn, uuid="mismatched-registry-uuid")
+        else:
+            _insert_legacy_sleep(conn, uuid="mismatched-registry-uuid")
+        conn.execute(
+            "INSERT INTO healthkit_sample_uuids (uuid, sample_type) VALUES (?, ?)",
+            ("mismatched-registry-uuid", registry_type),
+        )
+
+    with pytest.raises(RuntimeError) as caught:
+        store.initialize()
+
+    assert str(caught.value) == "HealthKit database integrity check failed"
+    assert "mismatched-registry-uuid" not in str(caught.value)
 
 
 def test_numeric_and_sleep_samples_are_stored_separately(tmp_path):

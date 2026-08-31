@@ -125,6 +125,20 @@ def _bounded_json_int(value: str) -> int:
     return int(value)
 
 
+def _decode_json(raw: bytes) -> object:
+    try:
+        return json.loads(
+            raw,
+            parse_constant=_reject_json_constant,
+            parse_int=_bounded_json_int,
+        )
+    except RecursionError:
+        raise PayloadValidationError(
+            "malformed_json",
+            "request body must be valid JSON",
+        ) from None
+
+
 def _authorized(request: Request, token: str) -> bool:
     header = request.headers.get("authorization")
     if not header or not header.startswith("Bearer "):
@@ -166,10 +180,12 @@ def build_app(settings: HealthKitSettings) -> Starlette:
     async def ingest(request: Request) -> JSONResponse:
         peer = _immediate_peer(request)
         source = _request_source(request, peer=peer)
+        source_key = f"source:{source}"
+        peer_key = f"peer:{peer}"
         if _authorized(request, settings.bearer_token):
-            limiter.clear(source, peer)
+            limiter.clear(source_key)
         else:
-            if limiter.check_and_record_failure(source, peer):
+            if limiter.check_and_record_failure(source_key, peer_key):
                 return _json_error(
                     429,
                     "auth_rate_limited",
@@ -199,11 +215,7 @@ def build_app(settings: HealthKitSettings) -> Starlette:
             return _json_error(status, exc.code, exc.message)
 
         try:
-            payload = json.loads(
-                raw,
-                parse_constant=_reject_json_constant,
-                parse_int=_bounded_json_int,
-            )
+            payload = _decode_json(raw)
         except PayloadValidationError as exc:
             record_failure("validation_failure")
             return _json_error(400, exc.code, exc.message)

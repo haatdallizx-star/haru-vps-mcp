@@ -73,13 +73,45 @@ def test_wrong_token_is_401(tmp_path):
     assert response.status_code == 401
 
 
-def test_unsupported_schema_is_400(tmp_path):
+@pytest.mark.parametrize("schema_version", [2, True, 1.0])
+def test_unsupported_schema_is_400(tmp_path, schema_version):
     body = payload()
-    body["schema_version"] = 2
+    body["schema_version"] = schema_version
     with TestClient(build_app(settings(tmp_path))) as client:
         response = client.post("/healthkit/v1/ingest", json=body, headers=auth())
     assert response.status_code == 400
     assert response.json()["error"] == "unsupported_schema"
+
+
+def test_deeply_nested_json_is_a_recorded_safe_400(tmp_path):
+    app = build_app(settings(tmp_path))
+    depth = 10_000
+    raw = b'{"nested":' + b"[" * depth + b"0" + b"]" * depth + b"}"
+    with TestClient(app) as client:
+        response = client.post(
+            "/healthkit/v1/ingest",
+            content=raw,
+            headers={**auth(), "Content-Type": "application/json"},
+        )
+    status = app.state.healthkit_store.status()
+    assert response.status_code == 400
+    assert response.json() == {
+        "error": "malformed_json",
+        "message": "request body must be valid JSON",
+    }
+    assert status.last_error_category == "validation_failure"
+
+
+def test_overflowing_aware_timestamp_is_a_recorded_safe_400(tmp_path):
+    app = build_app(settings(tmp_path))
+    body = payload([sample() | {"start_at": "9999-12-31T23:59:59-23:59"}])
+    with TestClient(app) as client:
+        response = client.post("/healthkit/v1/ingest", json=body, headers=auth())
+    status = app.state.healthkit_store.status()
+    assert response.status_code == 400
+    assert response.json()["error"] == "invalid_timestamp"
+    assert "9999-12-31" not in response.text
+    assert status.last_error_category == "validation_failure"
 
 
 def test_malformed_json_is_400(tmp_path):
@@ -328,6 +360,55 @@ def test_valid_token_bypasses_full_immediate_peer_failure_bucket(tmp_path):
         )
     assert response.status_code == 200
     assert response.json() == {"accepted": 1, "duplicates": 0, "rejected": 0}
+
+
+def test_valid_token_does_not_reset_immediate_peer_failure_bucket(tmp_path):
+    app = build_app(settings(tmp_path))
+    with TestClient(app, client=("127.0.0.1", 50000)) as client:
+        for index in range(5):
+            assert client.post(
+                "/healthkit/v1/ingest",
+                headers={
+                    **auth("wrong-token-xxxxxxxx"),
+                    "X-Forwarded-For": f"198.51.100.{index + 1}",
+                },
+            ).status_code == 401
+        valid = client.post(
+            "/healthkit/v1/ingest",
+            json=payload([sample("valid-with-peer-failures")]),
+            headers={**auth(), "X-Forwarded-For": "198.51.100.99"},
+        )
+        limited = client.post(
+            "/healthkit/v1/ingest",
+            headers={
+                **auth("wrong-token-yyyyyyyy"),
+                "X-Forwarded-For": "198.51.100.100",
+            },
+        )
+    assert valid.status_code == 200
+    assert limited.status_code == 429
+
+
+def test_source_and_peer_limiter_roles_do_not_alias(tmp_path):
+    app = build_app(settings(tmp_path))
+    with TestClient(app, client=("127.0.0.1", 50000)) as proxy:
+        for _ in range(5):
+            assert proxy.post(
+                "/healthkit/v1/ingest",
+                headers={
+                    **auth("wrong-token-xxxxxxxx"),
+                    "X-Forwarded-For": "127.0.0.2",
+                },
+            ).status_code == 401
+    with TestClient(app, client=("127.0.0.2", 50000)) as other_proxy:
+        response = other_proxy.post(
+            "/healthkit/v1/ingest",
+            headers={
+                **auth("wrong-token-yyyyyyyy"),
+                "X-Forwarded-For": "198.51.100.10",
+            },
+        )
+    assert response.status_code == 401
 
 
 def test_auth_failure_limiter_keyspace_is_bounded(tmp_path):

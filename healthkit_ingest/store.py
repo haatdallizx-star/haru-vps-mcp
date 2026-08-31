@@ -65,6 +65,8 @@ CREATE TABLE IF NOT EXISTS healthkit_ingest_status (
 );
 """
 
+_DATABASE_INTEGRITY_ERROR = "HealthKit database integrity check failed"
+
 
 def _utc_text(value: datetime) -> str:
     if value.tzinfo is None or value.utcoffset() is None:
@@ -86,10 +88,61 @@ class HealthKitStore:
         conn.execute("PRAGMA foreign_keys=ON")
         return conn
 
+    @staticmethod
+    def _has_row(conn: sqlite3.Connection, query: str) -> bool:
+        return conn.execute(query).fetchone() is not None
+
+    def _legacy_data_is_ambiguous(self, conn: sqlite3.Connection) -> bool:
+        cross_table_collision = self._has_row(
+            conn,
+            """
+            SELECT 1
+            FROM healthkit_numeric_samples AS numeric
+            JOIN healthkit_sleep_samples AS sleep ON sleep.uuid = numeric.uuid
+            LIMIT 1
+            """,
+        )
+        unsupported_numeric_type = self._has_row(
+            conn,
+            """
+            SELECT 1
+            FROM healthkit_numeric_samples
+            WHERE type NOT IN ('heart_rate', 'hrv', 'steps')
+            LIMIT 1
+            """,
+        )
+        return cross_table_collision or unsupported_numeric_type
+
+    def _registry_is_inconsistent(self, conn: sqlite3.Connection) -> bool:
+        return self._has_row(
+            conn,
+            """
+            SELECT 1
+            FROM healthkit_sample_uuids AS registry
+            LEFT JOIN healthkit_numeric_samples AS numeric ON numeric.uuid = registry.uuid
+            LEFT JOIN healthkit_sleep_samples AS sleep ON sleep.uuid = registry.uuid
+            WHERE (
+                registry.sample_type = 'sleep'
+                AND (sleep.uuid IS NULL OR numeric.uuid IS NOT NULL)
+            ) OR (
+                registry.sample_type != 'sleep'
+                AND (
+                    numeric.uuid IS NULL
+                    OR numeric.type != registry.sample_type
+                    OR sleep.uuid IS NOT NULL
+                )
+            )
+            LIMIT 1
+            """,
+        )
+
     def initialize(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self._connect() as conn:
-            conn.executescript(_SCHEMA)
+            conn.executescript(f"BEGIN IMMEDIATE;\n{_SCHEMA}")
+            if self._legacy_data_is_ambiguous(conn):
+                raise RuntimeError(_DATABASE_INTEGRITY_ERROR)
+
             conn.execute(
                 """
                 INSERT OR IGNORE INTO healthkit_sample_uuids (uuid, sample_type)
@@ -102,6 +155,9 @@ class HealthKitStore:
                 SELECT uuid, 'sleep' FROM healthkit_sleep_samples
                 """
             )
+            if self._registry_is_inconsistent(conn):
+                raise RuntimeError(_DATABASE_INTEGRITY_ERROR)
+
             conn.execute(
                 """
                 INSERT INTO healthkit_ingest_status (
