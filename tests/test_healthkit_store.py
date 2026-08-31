@@ -47,7 +47,7 @@ def sleep(uuid="sleep-1"):
     }
 
 
-def test_initialize_creates_only_healthkit_tables(tmp_path):
+def test_initialize_creates_only_isolated_healthkit_tables(tmp_path):
     path = tmp_path / "healthkit.sqlite3"
     store = HealthKitStore(path)
     store.initialize()
@@ -56,6 +56,9 @@ def test_initialize_creates_only_healthkit_tables(tmp_path):
     assert tables == {
         "healthkit_numeric_samples",
         "healthkit_sleep_samples",
+        "healthkit_deletions",
+        "healthkit_aggregates",
+        "healthkit_devices",
         "healthkit_ingest_status",
     }
     assert not any(name in tables for name in {"health_samples", "heart_rate", "sleep", "steps"})
