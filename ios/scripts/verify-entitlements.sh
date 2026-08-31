@@ -39,8 +39,11 @@ fi
 
 check_key() {
   local key="$1"
-  if plutil -extract "$key" raw "$TMP" >/dev/null 2>&1; then
-    echo "  present: $key = $(plutil -extract "$key" raw "$TMP" 2>/dev/null)"
+  # NOTE: do NOT use `plutil -extract <key> raw` here — the "raw" output mode
+  # only supports string/integer values and errors on booleans (our HealthKit
+  # entitlements are booleans), which would falsely fail the gate.
+  if plutil -extract "$key" "$TMP" >/dev/null 2>&1; then
+    echo "  present: $key"
   else
     echo "Entitlements gate: FAIL - missing required entitlement '$key'" >&2
     exit 1
