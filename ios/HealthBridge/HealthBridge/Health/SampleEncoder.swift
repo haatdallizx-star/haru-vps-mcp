@@ -109,7 +109,7 @@ struct SampleEncoder {
                 type: metric.rawValue,
                 value: nil,
                 unit: nil,
-                stage: sleepStage(categorySample.value),
+                stage: normalizedSleepStage(raw: categorySample.value),
                 stageRaw: categorySample.value,
                 startAt: common.startAt,
                 endAt: common.endAt,
@@ -128,6 +128,18 @@ struct SampleEncoder {
 
     func encodeDeletion(_ deleted: HKDeletedObject, metric: HealthMetric, queuedAt: Date = Date()) -> WireDeletion {
         encodeDeletion(uuid: deleted.uuid, metric: metric, queuedAt: queuedAt)
+    }
+
+    func normalizedSleepStage(raw: Int) -> String {
+        switch raw {
+        case HKCategoryValueSleepAnalysis.inBed.rawValue: return "in_bed"
+        case HKCategoryValueSleepAnalysis.asleepUnspecified.rawValue: return "asleep"
+        case HKCategoryValueSleepAnalysis.awake.rawValue: return "awake"
+        case HKCategoryValueSleepAnalysis.asleepCore.rawValue: return "core"
+        case HKCategoryValueSleepAnalysis.asleepDeep.rawValue: return "deep"
+        case HKCategoryValueSleepAnalysis.asleepREM.rawValue: return "rem"
+        default: return "unknown"
+        }
     }
 
     private func commonFields(sample: HKSample, queuedAt: Date) -> (
@@ -157,24 +169,10 @@ struct SampleEncoder {
             case let value as Int: result[key] = .int(value)
             case let value as Double: result[key] = .double(value)
             case let value as String: result[key] = .string(value)
-            case let value as NSNumber:
-                result[key] = .double(value.doubleValue)
-            default:
-                continue
+            case let value as NSNumber: result[key] = .double(value.doubleValue)
+            default: continue
             }
         }
         return result
-    }
-
-    private func sleepStage(_ raw: Int) -> String {
-        switch raw {
-        case HKCategoryValueSleepAnalysis.inBed.rawValue: return "in_bed"
-        case HKCategoryValueSleepAnalysis.asleepUnspecified.rawValue: return "asleep"
-        case HKCategoryValueSleepAnalysis.awake.rawValue: return "awake"
-        case HKCategoryValueSleepAnalysis.asleepCore.rawValue: return "core"
-        case HKCategoryValueSleepAnalysis.asleepDeep.rawValue: return "deep"
-        case HKCategoryValueSleepAnalysis.asleepREM.rawValue: return "rem"
-        default: return "unknown"
-        }
     }
 }
