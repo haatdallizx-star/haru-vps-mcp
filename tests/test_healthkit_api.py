@@ -48,14 +48,23 @@ def test_valid_batch_returns_200_and_counts(tmp_path):
     with TestClient(build_app(settings(tmp_path))) as client:
         response = client.post("/healthkit/v1/ingest", json=payload(), headers=auth())
     assert response.status_code == 200
-    assert response.json() == {"accepted": 1, "duplicates": 0, "rejected": 0}
+    body = response.json()
+    assert body["accepted"] == 1
+    assert body["duplicates"] == 0
+    assert body["deleted"] == 0
+    assert body["rejected"] == 0
+    assert body["server_time"].endswith("Z")
 
 
 def test_replay_returns_duplicate_count(tmp_path):
     with TestClient(build_app(settings(tmp_path))) as client:
         assert client.post("/healthkit/v1/ingest", json=payload(), headers=auth()).status_code == 200
         response = client.post("/healthkit/v1/ingest", json=payload(), headers=auth())
-    assert response.json() == {"accepted": 0, "duplicates": 1, "rejected": 0}
+    body = response.json()
+    assert body["accepted"] == 0
+    assert body["duplicates"] == 1
+    assert body["deleted"] == 0
+    assert body["rejected"] == 0
 
 
 def test_missing_auth_is_401_without_body_processing(tmp_path):
