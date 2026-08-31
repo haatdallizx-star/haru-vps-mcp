@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import secrets
+from dataclasses import asdict
 from datetime import datetime, timezone
 
 from starlette.applications import Starlette
@@ -49,6 +50,9 @@ def build_app(settings: HealthKitSettings) -> Starlette:
     store = HealthKitStore(settings.database_path)
     store.initialize()
 
+    def record_error(category: str) -> None:
+        store.record_error(category, occurred_at=datetime.now(timezone.utc))
+
     async def ingest(request: Request) -> JSONResponse:
         if not _authorized(request, settings.bearer_token):
             return _json_error(401, "unauthorized", "missing or invalid bearer token")
@@ -56,30 +60,53 @@ def build_app(settings: HealthKitSettings) -> Starlette:
         try:
             raw = await _read_limited_body(request, max_body_bytes=settings.max_body_bytes)
         except PayloadValidationError as exc:
+            record_error(exc.code)
             status = 413 if exc.code == "body_too_large" else 400
             return _json_error(status, exc.code, exc.message)
 
         try:
             payload = json.loads(raw)
         except (json.JSONDecodeError, UnicodeDecodeError):
+            record_error("malformed_json")
             return _json_error(400, "malformed_json", "request body must be valid JSON")
 
         try:
             batch = parse_batch(payload, max_batch_samples=settings.max_batch_samples)
         except PayloadValidationError as exc:
+            record_error(exc.code)
             status = 413 if exc.code == "batch_too_large" else 400
             return _json_error(status, exc.code, exc.message)
 
         try:
             result = store.ingest(batch, received_at=datetime.now(timezone.utc))
         except Exception:
+            record_error("storage_failure")
             return _json_error(500, "storage_failure", "HealthKit batch could not be stored")
 
         return JSONResponse(
-            {"accepted": result.accepted, "duplicates": result.duplicates, "rejected": 0},
+            {
+                "accepted": result.accepted,
+                "duplicates": result.duplicates,
+                "deleted": result.deleted,
+                "rejected": 0,
+                "server_time": result.server_time,
+            },
             status_code=200,
         )
 
-    app = Starlette(routes=[Route("/healthkit/v1/ingest", ingest, methods=["POST"])])
+    async def status(request: Request) -> JSONResponse:
+        if not _authorized(request, settings.bearer_token):
+            return _json_error(401, "unauthorized", "missing or invalid bearer token")
+        current = asdict(store.status())
+        current["devices"] = [asdict(device) for device in store.devices()]
+        current["server_time"] = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        return JSONResponse(current, status_code=200)
+
+    app = Starlette(
+        routes=[
+            Route("/healthkit/v1/ingest", ingest, methods=["POST"]),
+            Route("/healthkit/v1/status", status, methods=["GET"]),
+        ]
+    )
     app.state.healthkit_store = store
     return app
