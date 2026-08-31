@@ -8,10 +8,11 @@
 #   - com.apple.developer.healthkit
 #   - com.apple.developer.healthkit.background-delivery
 #
-# It parses the entitlements via `plutil` (a real, structured plist operation)
-# rather than a loose grep, so a value that merely *looks* like a key is not
-# accepted. The extracted plist is written to the optional second argument
-# (default: stdout path in a temp file) so CI can upload it as evidence.
+# The check is a structured plist->JSON parse (plutil + python3), not a loose
+# grep, and it compares exact key membership. It intentionally does NOT use
+# `plutil -extract <key> raw`, because the HealthKit entitlements are booleans
+# and the "raw" output mode only supports string/integer values. The extracted
+# entitlements are also echoed to the log as evidence.
 
 set -euo pipefail
 
@@ -37,22 +38,27 @@ if ! codesign -d --entitlements "$TMP" "$APP" >/dev/null 2>&1; then
   exit 1
 fi
 
-check_key() {
-  local key="$1"
-  # NOTE: do NOT use `plutil -extract <key> raw` here — the "raw" output mode
-  # only supports string/integer values and errors on booleans (our HealthKit
-  # entitlements are booleans), which would falsely fail the gate.
-  if plutil -extract "$key" "$TMP" >/dev/null 2>&1; then
-    echo "  present: $key"
-  else
-    echo "Entitlements gate: FAIL - missing required entitlement '$key'" >&2
-    exit 1
-  fi
-}
+echo "Extracted entitlements from $APP:"
+plutil -p "$TMP" || true
+echo "---"
 
-echo "Reading entitlements from $APP ..."
-check_key "com.apple.developer.healthkit"
-check_key "com.apple.developer.healthkit.background-delivery"
-
-echo "Entitlements gate: PASS (healthkit + healthkit.background-delivery present)"
-echo "  evidence: $TMP"
+# Convert to JSON and parse with python3 - robust for boolean values.
+JSON="$(plutil -convert json -o - "$TMP" 2>/dev/null || echo '{}')"
+python3 - "$JSON" <<'PY'
+import json, sys
+try:
+    data = json.loads(sys.argv[1])
+except Exception:
+    data = {}
+required = [
+    "com.apple.developer.healthkit",
+    "com.apple.developer.healthkit.background-delivery",
+]
+missing = [k for k in required if k not in data]
+for k in sorted(data):
+    print("  present: %s" % k)
+if missing:
+    print("Entitlements gate: FAIL - missing required entitlement(s): %s" % ", ".join(missing))
+    sys.exit(1)
+print("Entitlements gate: PASS (healthkit + healthkit.background-delivery present)")
+PY
