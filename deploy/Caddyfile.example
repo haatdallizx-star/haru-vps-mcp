@@ -1,12 +1,18 @@
-# Safe public default: fail closed.
-#
-# Replace this block only after placing an authentication mechanism in front of
-# the loopback Haru gateway (for example, an authenticated tunnel or an auth-
-# enforcing reverse proxy). Host/Origin checks inside Haru MCP are NOT auth.
+# Safe public default: keep MCP fail-closed while exposing only the authenticated
+# HealthKit ingest route. The HealthKit service performs its own bearer-token auth.
 mcp.example.com {
-    respond "Haru MCP public ingress disabled until authentication is configured" 403
+    handle /healthkit/v1/ingest {
+        reverse_proxy 127.0.0.1:8770 {
+            # This overwrite defines the app's trusted forwarded-source boundary.
+            header_up X-Forwarded-For {remote_host}
+        }
+    }
+
+    handle {
+        respond "Haru MCP public ingress disabled until authentication is configured" 403
+    }
 }
 
-# After your authentication layer is configured, it may proxy authenticated
+# After your authentication layer is configured, it may proxy authenticated MCP
 # requests to http://127.0.0.1:8765. Do not expose that loopback listener
-# anonymously, and do not turn the Haru gateway bind address into 0.0.0.0.
+# anonymously, and do not turn either service bind address into 0.0.0.0.

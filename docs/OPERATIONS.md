@@ -122,6 +122,29 @@ Typical rollback order:
 
 If the secure tunnel is broken, the safe degraded state is **remote access unavailable while Haru remains private**.
 
+## HealthKit ingest deployment and rollback
+
+The HealthKit ingest path is intentionally independent from the existing shortcut-based health path. Its Unix boundary is also independent: the example unit runs as the non-login `haru-healthkit` account, not the `haru` account used by the arbitrary-shell workspace. Keep `/var/lib/haru-healthkit` mode 0700 and the environment file readable only by root and `haru-healthkit`; otherwise the workspace identity could read the database or bearer token through same-UID process access.
+
+Deploy it in this order:
+
+1. Install the updated Haru package/virtual environment without restarting unrelated services.
+2. Create the non-login `haru-healthkit` system account and `/var/lib/haru-healthkit` owned by that account with mode 0700.
+3. Copy `deploy/healthkit-ingest.env.example` to `/etc/haru-healthkit/healthkit-ingest.env`, restrict it to root and `haru-healthkit`, and replace the placeholder with a random bearer token generated outside Git. Startup rejects the checked-in sentinel, whitespace-bearing values, and other clearly invalid token shapes.
+4. Install `healthkit-ingest.service`, run `systemctl daemon-reload`, and start only that service.
+5. Confirm it listens only on `127.0.0.1:8770`.
+6. Add/reload only the Caddy `/healthkit/v1/ingest` route. The checked-in handler overwrites `X-Forwarded-For` with `{remote_host}`; this sanitized single address crossing from the loopback Caddy peer is the application's trusted forwarded-source boundary. Do not preserve or append a client-supplied forwarding chain.
+7. Run the synthetic probe with an HTTPS `HARU_HEALTHKIT_PROBE_URL` and `HARU_HEALTHKIT_PROBE_TOKEN` supplied in the operator shell environment. The probe refuses plaintext URLs and all redirects so its Authorization header cannot cross origins or downgrade transport.
+8. Re-check the existing Haru MCP gateway and workspace tests/health separately.
+
+The application limits repeated invalid bearer tokens per resolved source after five failures in 60 seconds, caps retained source keys at 1,024, and never reads an unauthorized or rate-limited body. A correct token is checked before limiting and clears failures for that source. If a different reverse proxy topology is used, it must provide an equivalent overwrite boundary before the loopback hop; forwarded headers from non-loopback peers or malformed/multi-hop values are ignored.
+
+Validation and storage failures update only safe status categories (`validation_failure` or `storage_failure`); raw request data and exception text are not stored. A later successful batch advances success timestamps but deliberately preserves the most recent error timestamp/category for recovery diagnostics.
+
+Rollback removes the new Caddy handler and stops/disables `healthkit-ingest.service`. Preserve `/var/lib/haru-healthkit` until data retention is decided separately. Do not delete or migrate the shortcut health database and do not restart `haru-mcp.service` merely to roll back HealthKit ingest.
+
+A failed HealthKit probe should be triaged in layers: bearer/auth and public route first, then loopback service status, then SQLite path permissions. Never respond by binding port 8770 to `0.0.0.0`.
+
 ## Shell and browser probe hygiene
 
 Workspace shell access can spawn subprocess trees. Browser automation is especially capable of leaving helpers/renderers behind after the initiating command exits.
@@ -157,5 +180,7 @@ Examples in this repository use loopback addresses, `example.com`, and generic f
 | Haru service down | systemd status/logs, config syntax, installed package | restore/restart the last known-good gateway on loopback |
 | Haru healthy, workspace tools fail | workspace proxy/service, named-server config, child processes, workspace permissions | repair/restart the private backend; do not expose it publicly |
 | Local Haru works, remote client fails | tunnel service and current tunnel diagnostics | repair/restart the private tunnel; keep public ingress denied |
+| HealthKit probe returns 401/403 | bearer-token source and narrow Caddy route | repair auth/config; never log the token or widen the listener |
+| HealthKit service cannot write | `/var/lib/haru-healthkit` ownership/mode and service logs | repair only the HealthKit state directory; leave shortcut health data untouched |
 | Resource/thread exhaustion | leftover descendants, task count, memory, recent probes | clean up leaked descendants and identify the workload before changing limits |
 | Unexpected remote Git branch head | re-read remote refs and commits | stop mutation; reconcile provenance before pushing |

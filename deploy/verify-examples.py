@@ -9,6 +9,9 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[1]
 DEPLOY = ROOT / "deploy"
 GATEWAY_UNIT = DEPLOY / "haru-mcp.service.example"
+HEALTHKIT_UNIT = DEPLOY / "healthkit-ingest.service.example"
+HEALTHKIT_ENV = DEPLOY / "healthkit-ingest.env.example"
+CADDY = DEPLOY / "Caddyfile.example"
 WORKSPACE_UNIT = DEPLOY / "workspace" / "haru-workspace.service.example"
 SERVERS_JSON = DEPLOY / "workspace" / "servers.json.example"
 
@@ -26,6 +29,58 @@ def _verify_public_page() -> None:
     missing = [term for term in required if term not in page]
     if missing:
         raise SystemExit(f"docs/index.html: missing current workspace capabilities: {missing}")
+
+
+def verify_healthkit_examples() -> None:
+    if not HEALTHKIT_UNIT.exists() or not HEALTHKIT_ENV.exists():
+        raise SystemExit("HealthKit deployment examples are required")
+
+    unit = HEALTHKIT_UNIT.read_text(encoding="utf-8")
+    env = HEALTHKIT_ENV.read_text(encoding="utf-8")
+    caddy = CADDY.read_text(encoding="utf-8")
+
+    require_lines(
+        unit,
+        (
+            "User=haru-healthkit",
+            "Group=haru-healthkit",
+            "WorkingDirectory=/opt/haru-mcp",
+            "EnvironmentFile=/etc/haru-healthkit/healthkit-ingest.env",
+            "ExecStart=/opt/haru-mcp/venv/bin/healthkit-ingest",
+            "Restart=on-failure",
+            "StateDirectory=haru-healthkit",
+            "StateDirectoryMode=0700",
+            "NoNewPrivileges=true",
+            "ProtectSystem=strict",
+            "ProtectProc=invisible",
+            "ProcSubset=pid",
+            "RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6",
+            "IPAddressAllow=127.0.0.0/8",
+            "IPAddressAllow=::1/128",
+            "IPAddressDeny=any",
+        ),
+        "HealthKit unit",
+    )
+    require_lines(
+        env,
+        (
+            "HARU_HEALTHKIT_HOST=127.0.0.1",
+            "HARU_HEALTHKIT_PORT=8770",
+            "HARU_HEALTHKIT_DB=/var/lib/haru-healthkit/healthkit.sqlite3",
+            "HARU_HEALTHKIT_TOKEN=REPLACE_WITH_A_RANDOM_SECRET_AT_LEAST_32_CHARS",
+            "HARU_HEALTHKIT_MAX_BATCH_SAMPLES=800",
+            "HARU_HEALTHKIT_MAX_BODY_BYTES=2000000",
+        ),
+        "HealthKit env",
+    )
+    if "REPLACE_WITH_A_RANDOM_SECRET_AT_LEAST_32_CHARS" not in env:
+        raise SystemExit("HealthKit env token must remain an obvious placeholder")
+    if "handle /healthkit/v1/ingest {" not in caddy or "reverse_proxy 127.0.0.1:8770" not in caddy:
+        raise SystemExit("Caddy must proxy only the HealthKit ingest route to 127.0.0.1:8770")
+    if caddy.count("reverse_proxy 127.0.0.1:8770") != 1:
+        raise SystemExit("Caddy must contain exactly one HealthKit ingest upstream")
+    if "header_up X-Forwarded-For {remote_host}" not in caddy:
+        raise SystemExit("Caddy must overwrite the forwarded source at the trusted proxy boundary")
 
 
 def verify_static() -> None:
@@ -98,6 +153,7 @@ def verify_static() -> None:
     if "--cwd" in workspace:
         raise SystemExit("workspace unit: do not use mcp-proxy --cwd for named servers")
 
+    verify_healthkit_examples()
     print("public_example_static=PASS")
 
 
@@ -142,6 +198,7 @@ def verify_systemd_if_available() -> None:
         for name, source in (
             ("haru-mcp-example.service", GATEWAY_UNIT),
             ("haru-workspace-example.service", WORKSPACE_UNIT),
+            ("healthkit-ingest-example.service", HEALTHKIT_UNIT),
         ):
             target = tmp_path / name
             target.write_text(normalized_unit(source.read_text(encoding="utf-8")), encoding="utf-8")
