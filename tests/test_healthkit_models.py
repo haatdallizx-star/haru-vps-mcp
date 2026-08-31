@@ -124,9 +124,9 @@ def test_schema_version_must_equal_one():
         parse_batch(payload, max_batch_samples=800)
 
 
-def test_batch_may_not_exceed_800_samples():
+def test_batch_may_not_exceed_800_records():
     samples = [numeric_sample(uuid=f"sample-{i}") for i in range(801)]
-    with pytest.raises(PayloadValidationError, match="too many samples"):
+    with pytest.raises(PayloadValidationError, match="too many records"):
         parse_batch(batch(samples), max_batch_samples=800)
 
 
