@@ -94,7 +94,7 @@ def test_ingest_response_reports_deletions_and_server_time(tmp_path):
     assert response.status_code == 200
     body = response.json()
     assert body["accepted"] == 1
-    assert body["deleted"] == 0
+    assert body["deleted"] == 1
     assert body["rejected"] == 0
     assert body["server_time"].endswith("Z")
 
