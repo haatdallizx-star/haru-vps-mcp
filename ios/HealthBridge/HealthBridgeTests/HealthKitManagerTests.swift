@@ -15,9 +15,9 @@ final class HealthKitManagerTests: XCTestCase {
     }
 
     func testBackgroundDeliveryUsesConservativeStepFrequency() {
-        XCTAssertEqual(HealthKitManager.backgroundFrequency(for: .steps), .hourly)
-        XCTAssertEqual(HealthKitManager.backgroundFrequency(for: .heartRate), .immediate)
-        XCTAssertEqual(HealthKitManager.backgroundFrequency(for: .hrv), .immediate)
-        XCTAssertEqual(HealthKitManager.backgroundFrequency(for: .sleep), .immediate)
+        XCTAssertEqual(HealthKitManager.backgroundFrequency(for: .steps).rawValue, HKUpdateFrequency.hourly.rawValue)
+        XCTAssertEqual(HealthKitManager.backgroundFrequency(for: .heartRate).rawValue, HKUpdateFrequency.immediate.rawValue)
+        XCTAssertEqual(HealthKitManager.backgroundFrequency(for: .hrv).rawValue, HKUpdateFrequency.immediate.rawValue)
+        XCTAssertEqual(HealthKitManager.backgroundFrequency(for: .sleep).rawValue, HKUpdateFrequency.immediate.rawValue)
     }
 }
