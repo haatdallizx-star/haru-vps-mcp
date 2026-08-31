@@ -1,0 +1,101 @@
+name: iOS HealthBridge build
+
+# Builds the HealthBridge iOS collector on a macOS runner, ad-hoc signs it while
+# preserving HealthKit entitlements, gates on those entitlements, and uploads a
+# .ipa artifact. This does NOT require an Apple Developer account.
+on:
+  push:
+    branches: [main, codex/healthkit-ios-collector]
+    paths:
+      - 'ios/**'
+      - '.github/workflows/ios-build.yml'
+      - 'docs/healthkit-ios-collector.md'
+  pull_request:
+    paths:
+      - 'ios/**'
+      - '.github/workflows/ios-build.yml'
+      - 'docs/healthkit-ios-collector.md'
+  workflow_dispatch:
+
+concurrency:
+  group: ios-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-14
+    timeout-minutes: 45
+    env:
+      SCHEME: HealthBridge
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+        working-directory: ios
+
+      - name: Run unit tests (iPhone simulator)
+        run: |
+          xcodebuild test \
+            -project HealthBridge.xcodeproj \
+            -scheme "$SCHEME" \
+            -destination 'platform=iOS Simulator,name=iPhone 15' \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            | tail -30
+        working-directory: ios
+        continue-on-error: false
+
+      - name: Build .app (Release, iphoneos)
+        run: |
+          xcodebuild \
+            -project HealthBridge.xcodeproj \
+            -scheme "$SCHEME" \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            build | tail -20
+        working-directory: ios
+
+      - name: Ad-hoc sign with entitlements
+        run: |
+          APP=build/Build/Products/Release-iphoneos/HealthBridge.app
+          # Ad-hoc sign (no Apple Developer account) while embedding the HealthKit
+          # entitlements into the final signature. This deliberately is NOT a
+          # "fully unsigned" build — copying entitlements in here is what makes
+          # them inspectable and satisfies the entitlement gate below.
+          codesign --force --sign - --entitlements HealthBridge/HealthBridge.entitlements "$APP"
+          codesign --verify --deep "$APP"
+        working-directory: ios
+
+      - name: Entitlement gate (HealthKit + background delivery)
+        run: |
+          APP=build/Build/Products/Release-iphoneos/HealthBridge.app
+          # Writes the extracted entitlements to build/entitlements-verified.plist,
+          # which is uploaded as evidence. Fails the job if either key is missing.
+          bash scripts/verify-entitlements.sh "$APP" build/entitlements-verified.plist
+        working-directory: ios
+
+      - name: Package .ipa
+        run: |
+          APP=build/Build/Products/Release-iphoneos/HealthBridge.app
+          rm -rf Payload
+          mkdir -p Payload
+          cp -R "$APP" Payload/
+          zip -qr HealthBridge.ipa Payload/
+          ls -la HealthBridge.ipa
+        working-directory: ios
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: HealthBridge-ipa
+          path: |
+            ios/HealthBridge.ipa
+            ios/build/entitlements-verified.plist
+          if-no-files-found: error

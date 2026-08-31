@@ -1,0 +1,5 @@
+// HealthBridge build configuration.
+// HEALTHBRIDGE_BUNDLE_ID is the single documented knob for the app bundle
+// identifier. Change it here, or override at build time with:
+//   xcodebuild ... PRODUCT_BUNDLE_IDENTIFIER=com.yourteam.healthbridge
+HEALTHBRIDGE_BUNDLE_ID = com.haru.healthbridge

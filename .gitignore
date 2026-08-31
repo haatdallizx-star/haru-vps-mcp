@@ -8,3 +8,9 @@ build/
 .env
 *.env
 !deploy/haru-mcp.env.example
+
+# iOS HealthBridge collector (XcodeGen generates the .xcodeproj; build artifacts)
+ios/HealthBridge.xcodeproj/
+ios/DerivedData/
+ios/build/
+*.ipa
