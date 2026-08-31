@@ -37,7 +37,7 @@ final class SampleEncoderTests: XCTestCase {
         }
     }
 
-    func testEncodesSleepStagesAndPreservesRawValue() throws {
+    func testEncodesKnownSleepStagesAndPreservesRawValue() throws {
         let encoder = SampleEncoder()
         guard let sleepType = HealthMetric.sleep.sampleType as? HKCategoryType else {
             return XCTFail("Expected sleep category type")
@@ -51,7 +51,7 @@ final class SampleEncoderTests: XCTestCase {
             (HKCategoryValueSleepAnalysis.asleepREM.rawValue, "rem"),
         ]
 
-        for (raw, label) in known + [(9_999, "unknown")] {
+        for (raw, label) in known {
             let sample = HKCategorySample(type: sleepType, value: raw, start: start, end: end)
             let wire = try encoder.encode(sample: sample, metric: .sleep, queuedAt: queued)
             XCTAssertEqual(wire.type, "sleep")
@@ -60,6 +60,11 @@ final class SampleEncoderTests: XCTestCase {
             XCTAssertNil(wire.value)
             XCTAssertNil(wire.unit)
         }
+    }
+
+    func testUnknownSleepStageNormalizesWithoutLosingRawValue() {
+        let encoder = SampleEncoder()
+        XCTAssertEqual(encoder.normalizedSleepStage(raw: 9_999), "unknown")
     }
 
     func testDeletionPreservesUUIDMetricAndQueueTime() {
