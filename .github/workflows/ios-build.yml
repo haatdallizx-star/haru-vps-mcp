@@ -63,14 +63,9 @@ jobs:
             | tail -40
         working-directory: ios
 
-      - name: Build .app (Release, iphoneos, ad-hoc)
+      - name: Build .app (Release, iphoneos)
         run: |
           set -o pipefail
-          # Ad-hoc sign via xcodebuild (no Apple Developer account). Xcode reads
-          # CODE_SIGN_ENTITLEMENTS (HealthBridge.entitlements) and embeds the
-          # HealthKit entitlements into the final signature, which the gate below
-          # requires. A manually re-signed, profile-less build can drop restricted
-          # entitlements, so we let Xcode do the signing.
           xcodebuild \
             -project HealthBridge.xcodeproj \
             -scheme "$SCHEME" \
@@ -78,20 +73,20 @@ jobs:
             -sdk iphoneos \
             -destination 'generic/platform=iOS' \
             -derivedDataPath build \
-            CODE_SIGN_STYLE=Manual \
-            CODE_SIGN_IDENTITY=- \
-            CODE_SIGNING_ALLOWED=YES \
-            CODE_SIGNING_REQUIRED=YES \
-            DEVELOPMENT_TEAM= \
-            build | tail -25
+            CODE_SIGNING_ALLOWED=NO \
+            build | tail -20
         working-directory: ios
 
-      - name: Verify signature + show embedded entitlements
+      - name: Ad-hoc sign with entitlements (codesign CLI)
         run: |
           set -o pipefail
           APP=build/Build/Products/Release-iphoneos/HealthBridge.app
+          # Xcode's SDK refuses ad-hoc signing for iphoneos, but the codesign CLI
+          # allows it and embeds the entitlements. Sign with the entitlements file
+          # so the gate below can inspect them. This is NOT an unsigned build.
+          codesign --force --sign - --entitlements HealthBridge/HealthBridge.entitlements "$APP"
           codesign --verify --deep "$APP"
-          echo "=== embedded entitlements ==="
+          echo "=== embedded entitlements (from signature) ==="
           codesign -d --entitlements - "$APP" 2>&1 | head -20
         working-directory: ios
 
