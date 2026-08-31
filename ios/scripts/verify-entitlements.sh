@@ -3,16 +3,16 @@
 #
 # Usage: verify-entitlements.sh <path-to-.app> [output-entitlements-plist]
 #
-# Extracts the code-signing entitlements from the built app and FAILS (non-zero)
-# unless BOTH of the following are present:
+# Reads the code-signing entitlements from the built app (via `codesign -d
+# --entitlements -`) and FAILS (non-zero) unless BOTH of the following are
+# present:
 #   - com.apple.developer.healthkit
 #   - com.apple.developer.healthkit.background-delivery
 #
-# The check is a structured plist->JSON parse (plutil + python3), not a loose
-# grep, and it compares exact key membership. It intentionally does NOT use
-# `plutil -extract <key> raw`, because the HealthKit entitlements are booleans
-# and the "raw" output mode only supports string/integer values. The extracted
-# entitlements are also echoed to the log as evidence.
+# The check is a structured plist -> JSON parse (plutil + python3), not a loose
+# grep, and compares exact key membership. `plutil -extract <key> raw` is NOT
+# used because those entitlements are booleans and "raw" only supports
+# string/integer values.
 
 set -euo pipefail
 
@@ -24,26 +24,21 @@ if [[ ! -d "$APP" ]]; then
   exit 1
 fi
 
-TMP="${OUT:-$(mktemp)}"
-if [[ -z "$OUT" ]]; then
-  trap 'rm -f "$TMP"' EXIT
-fi
-
-# `codesign -d --entitlements <file>` writes the app's embedded entitlements to
-# <file>; it only succeeds if the app is actually signed.
-if ! codesign -d --entitlements "$TMP" "$APP" >/dev/null 2>&1; then
-  echo "Entitlements gate: FAIL - app is not signed (cannot read entitlements)." >&2
-  echo "  An unsigned app (e.g. CODE_SIGNING_ALLOWED=NO left as final state) has no" >&2
-  echo "  embedded entitlements. Ad-hoc sign with the entitlements before gating." >&2
+# `codesign -d --entitlements - APP` prints the embedded entitlements (a plist)
+# to stdout. It returns nothing when the app is unsigned / has no entitlements.
+XML="$(codesign -d --entitlements - "$APP" 2>/dev/null || true)"
+if [[ -z "$XML" ]]; then
+  echo "Entitlements gate: FAIL - app has no readable entitlements (unsigned?)." >&2
+  echo "  An unsigned app (e.g. CODE_SIGNING_ALLOWED=NO as the final state) has no" >&2
+  echo "  embedded entitlements. Ad-hoc sign it (Xcode or codesign --sign -) first." >&2
   exit 1
 fi
 
 echo "Extracted entitlements from $APP:"
-plutil -p "$TMP" || true
-echo "---"
+printf '%s\n' "$XML"
 
-# Convert to JSON and parse with python3 - robust for boolean values.
-JSON="$(plutil -convert json -o - "$TMP" 2>/dev/null || echo '{}')"
+# Convert the plist to JSON and assert exact key membership in python3.
+JSON="$(printf '%s\n' "$XML" | plutil -convert json -o - - 2>/dev/null || echo '{}')"
 python3 - "$JSON" <<'PY'
 import json, sys
 try:
@@ -62,3 +57,9 @@ if missing:
     sys.exit(1)
 print("Entitlements gate: PASS (healthkit + healthkit.background-delivery present)")
 PY
+
+# Save an evidence copy of the extracted entitlements when an output path is given.
+if [[ -n "$OUT" ]]; then
+  printf '%s\n' "$XML" > "$OUT"
+  echo "  evidence written: $OUT"
+fi
