@@ -73,10 +73,10 @@ def verify_healthkit_examples() -> None:
     )
     if "REPLACE_WITH_A_RANDOM_SECRET_AT_LEAST_32_CHARS" not in env:
         raise SystemExit("HealthKit env token must remain an obvious placeholder")
-    if "handle /healthkit/v1/ingest {" not in caddy or "reverse_proxy 127.0.0.1:8770" not in caddy:
-        raise SystemExit("Caddy must proxy only the HealthKit ingest route to 127.0.0.1:8770")
+    if "handle /healthkit/v1/* {" not in caddy or "reverse_proxy 127.0.0.1:8770" not in caddy:
+        raise SystemExit("Caddy must proxy only the authenticated HealthKit v1 API prefix to 127.0.0.1:8770")
     if caddy.count("reverse_proxy 127.0.0.1:8770") != 1:
-        raise SystemExit("Caddy must contain exactly one HealthKit ingest upstream")
+        raise SystemExit("Caddy must contain exactly one HealthKit API upstream")
 
 
 def verify_static() -> None:
