@@ -42,7 +42,7 @@ final class HealthKitManager: NSObject {
                 if error == nil {
                     onFired(metric)
                 }
-                completion?()
+                completion()
             }
             healthStore.execute(query)
 
@@ -61,8 +61,8 @@ final class HealthKitManager: NSObject {
         firstRunWindowStart: Date?,
         onSamples: @escaping (HealthKitMetric, [HealthSample], Data) -> Void
     ) {
-        guard let type = HKObjectType.quantityType(forIdentifier: HKQuantityTypeIdentifier(rawValue: metric.healthKitTypeIdentifier)),
-              let unit = HKUnit(from: metric.hkUnitIdentifier) else { return }
+        guard let type = HKObjectType.quantityType(forIdentifier: HKQuantityTypeIdentifier(rawValue: metric.healthKitTypeIdentifier)) else { return }
+        let unit = HKUnit(from: metric.hkUnitIdentifier)
 
         var predicate: NSPredicate?
         var anchor: HKQueryAnchor?
@@ -92,7 +92,7 @@ final class HealthKitManager: NSObject {
                     endAt: quantitySample.endDate,
                     sourceName: quantitySample.sourceRevision.source.name,
                     sourceBundle: quantitySample.sourceRevision.source.bundleIdentifier,
-                    device: sanitizedDeviceDescription(quantitySample),
+                    device: self.sanitizedDeviceDescription(quantitySample),
                     metadata: metadata
                 ))
             }
