@@ -36,7 +36,7 @@ Haru MCP exposes powerful workspace filesystem and shell tools, so treat the end
 - Do not hand-craft file download URLs or treat raw client/sandbox paths as file references. The MCP host is responsible for supplying the `file` object declared through `openai/fileParams`.
 - The backend itself gets no second public hostname; it stays behind the gateway on loopback.
 - Optional public Host/Origin allowlists are request/transport hardening only. **They are not authentication.**
-- `deploy/Caddyfile.example` fails closed with HTTP 403. Replace it only for a separately reviewed authenticated ingress design.
+- `deploy/Caddyfile.example` keeps MCP fail-closed with HTTP 403. The only additional public route in the HealthKit example is `/healthkit/v1/ingest`, whose application endpoint requires a bearer token.
 - For a private/on-prem/local MCP server used from ChatGPT, see [`docs/SECURE-TUNNEL.md`](docs/SECURE-TUNNEL.md) and the current OpenAI Secure MCP Tunnel documentation instead of binding Haru to `0.0.0.0`.
 - Keep the delegated workspace disposable and separate from host configuration, credentials, home directories, and production data.
 
@@ -81,17 +81,34 @@ Those endpoints are a **separate workspace-backend composition**. To build them 
 
 The public tool surface is deliberately small: gateway health, workspace directory listing/read/write/edit/move/stat, ChatGPT file import, and isolated shell execution delegated to the loopback backends. `workspace_import_chatgpt_file` is declared with `openai/fileParams` so the ChatGPT host can replace a current-conversation file with a short-lived file reference before the MCP call.
 
+## HealthKit ingest service
+
+The HealthKit bridge uses a separate loopback service and a separate SQLite database. It does not replace or migrate any existing shortcut-based health path.
+
+Deployment order:
+
+1. Install the updated package into the Haru virtual environment.
+2. Create `/var/lib/haru-healthkit` for the dedicated service account with restrictive permissions.
+3. Create `/etc/haru-mcp/healthkit-ingest.env` from the example and generate a real random bearer token outside Git.
+4. Install and start only `healthkit-ingest.service`; it binds to `127.0.0.1:8770`.
+5. Add/reload the narrow Caddy `/healthkit/v1/ingest` route.
+6. Export `HARU_HEALTHKIT_PROBE_URL` and `HARU_HEALTHKIT_PROBE_TOKEN`, then run `python scripts/probe-healthkit-ingest.py`.
+7. Confirm the existing `haru-mcp` gateway and its tests remain healthy.
+
+Rollback removes only the HealthKit Caddy route and `healthkit-ingest.service`. Do not delete or migrate existing shortcut health data as part of this rollback.
+
 ## Operator documentation
 
 - [`docs/WORKSPACE-BACKENDS.md`](docs/WORKSPACE-BACKENDS.md) — build and operate the loopback filesystem/shell/file-ingress composition.
 - [`docs/SECURE-TUNNEL.md`](docs/SECURE-TUNNEL.md) — server-side Secure MCP Tunnel boundary, service supervision, fail-closed recovery, and real-client acceptance.
-- [`docs/OPERATIONS.md`](docs/OPERATIONS.md) — gateway service operations, layered health, upgrades/rollback, repository exact-head discipline, process hygiene, and secrets.
+- [`docs/OPERATIONS.md`](docs/OPERATIONS.md) — gateway service operations, layered health, upgrades/rollback, repository exact-head discipline, process hygiene, secrets, and HealthKit ingest operations.
 - [`deploy/haru-mcp.service.example`](deploy/haru-mcp.service.example) — minimal hardened systemd starting point.
-- [`deploy/Caddyfile.example`](deploy/Caddyfile.example) — intentionally fail-closed public reverse-proxy example.
+- [`deploy/healthkit-ingest.service.example`](deploy/healthkit-ingest.service.example) — isolated HealthKit ingest systemd example.
+- [`deploy/Caddyfile.example`](deploy/Caddyfile.example) — fail-closed MCP ingress plus the narrow authenticated HealthKit route.
 
 ## Upstream projects
 
-The gateway imports the MCP Python SDK, AnyIO, and typing-extensions. The optional reference workspace composes `mcp-proxy`, the Model Context Protocol filesystem server, and `shell-exec-mcp` without vendoring their source.
+The gateway imports the MCP Python SDK, AnyIO, and typing-extensions. The optional reference workspace composes `mcp-proxy`, the Model Context Protocol filesystem server, and `shell-exec-mcp` without vendoring their source. The isolated HealthKit ingest service additionally uses Starlette and Uvicorn.
 
 Exact selected workspace versions/commits, the `mcp==1.27.1` proxy-stack compatibility pin, and upstream license notes are recorded in [`THIRD-PARTY.md`](THIRD-PARTY.md).
 
