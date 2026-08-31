@@ -31,8 +31,13 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.haru.healthbridge
         CODE_SIGN_ENTITLEMENTS: HealthBridge.entitlements
         GENERATE_INFOPLIST_FILE: YES
-        INFOPLIST_KEY_NSHealthShareUsageDescription: HealthBridge reads your Health data to sync it to your private server.
+        INFOPLIST_KEY_NSHealthShareUsageDescription: HealthBridge reads heart rate, HRV, steps, and sleep to sync them to your private server.
         INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: YES
+        INFOPLIST_KEY_BGTaskSchedulerPermittedIdentifiers:
+          - com.haru.healthbridge.refresh
+        INFOPLIST_KEY_UIBackgroundModes:
+          - fetch
+          - processing
     entitlements:
       path: HealthBridge.entitlements
     scheme:
