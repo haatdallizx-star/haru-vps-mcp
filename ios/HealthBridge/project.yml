@@ -34,3 +34,5 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.haru.healthbridge.tests
+        TEST_HOST: ''
+        BUNDLE_LOADER: ''
