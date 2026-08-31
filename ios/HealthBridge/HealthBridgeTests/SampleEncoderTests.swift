@@ -63,9 +63,9 @@ final class SampleEncoderTests: XCTestCase {
     }
 
     func testDeletionPreservesUUIDMetricAndQueueTime() {
-        let deleted = HKDeletedObject(uuid: UUID())
-        let wire = SampleEncoder().encodeDeletion(deleted, metric: .heartRate, queuedAt: queued)
-        XCTAssertEqual(wire.uuid, deleted.uuid.uuidString)
+        let uuid = UUID()
+        let wire = SampleEncoder().encodeDeletion(uuid: uuid, metric: .heartRate, queuedAt: queued)
+        XCTAssertEqual(wire.uuid, uuid.uuidString)
         XCTAssertEqual(wire.metric, "heart_rate")
         XCTAssertEqual(wire.queuedAt, queued)
     }
