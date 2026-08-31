@@ -1,0 +1,118 @@
+name: iOS HealthBridge build
+
+# Builds the HealthBridge iOS collector on a macOS runner, ad-hoc signs it while
+# preserving HealthKit entitlements, gates on those entitlements, and uploads a
+# .ipa artifact. This does NOT require an Apple Developer account.
+on:
+  push:
+    branches: [main, codex/healthkit-ios-collector]
+    paths:
+      - 'ios/**'
+      - '.github/workflows/ios-build.yml'
+      - 'docs/healthkit-ios-collector.md'
+  pull_request:
+    paths:
+      - 'ios/**'
+      - '.github/workflows/ios-build.yml'
+      - 'docs/healthkit-ios-collector.md'
+  workflow_dispatch:
+
+concurrency:
+  group: ios-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-14
+    timeout-minutes: 45
+    env:
+      SCHEME: HealthBridge
+    steps:
+      - uses: actions/checkout@v7
+
+      # XcodeGen 2.45.x emits a project in objectVersion 77 (Xcode 16 format),
+      # which the default Xcode 15.4 on the macos-14 runner cannot open. Xcode
+      # 16.2 is installed on this image; select it so xcodebuild can read the
+      # generated project.
+      - name: Select Xcode 16.2
+        run: |
+          sudo xcode-select -s /Applications/Xcode_16.2.app
+          xcodebuild -version
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+        working-directory: ios
+
+      - name: Run unit tests (iPhone simulator)
+        run: |
+          set -o pipefail
+          # Pick an available iPhone simulator dynamically (a hardcoded name can
+          # miss because some device names only exist on older iOS runtimes).
+          UDID=$(xcrun simctl list devices available -j 2>/dev/null | python3 -c "import sys,json;d=json.load(sys.stdin);devs=[(r,u['udid']) for r,g in d.get('devices',{}).items() for u in g if u.get('isAvailable') and 'iPhone' in u.get('name','')];devs.sort();print(devs[-1][1] if devs else '')")
+          if [ -z "$UDID" ]; then echo "No available iPhone simulator" && exit 1; fi
+          echo "Using simulator UDID $UDID"
+          xcodebuild test \
+            -project HealthBridge.xcodeproj \
+            -scheme "$SCHEME" \
+            -destination "id=$UDID" \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            | tail -40
+        working-directory: ios
+
+      - name: Build .app (Release, iphoneos)
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project HealthBridge.xcodeproj \
+            -scheme "$SCHEME" \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            build | tail -20
+        working-directory: ios
+
+      - name: Ad-hoc sign with entitlements (codesign CLI)
+        run: |
+          set -o pipefail
+          APP=build/Build/Products/Release-iphoneos/HealthBridge.app
+          # Xcode's SDK refuses ad-hoc signing for iphoneos, but the codesign CLI
+          # allows it and embeds the entitlements. Sign with the entitlements file
+          # so the gate below can inspect them. This is NOT an unsigned build.
+          codesign --force --sign - --entitlements HealthBridge/HealthBridge.entitlements "$APP"
+          codesign --verify --deep "$APP"
+          echo "=== embedded entitlements (from signature) ==="
+          codesign -d --entitlements - "$APP" 2>&1 | head -20
+        working-directory: ios
+
+      - name: Entitlement gate (HealthKit + background delivery)
+        run: |
+          APP=build/Build/Products/Release-iphoneos/HealthBridge.app
+          # Writes the extracted entitlements to build/entitlements-verified.plist,
+          # which is uploaded as evidence. Fails the job if either key is missing.
+          bash scripts/verify-entitlements.sh "$APP" build/entitlements-verified.plist
+        working-directory: ios
+
+      - name: Package .ipa
+        run: |
+          APP=build/Build/Products/Release-iphoneos/HealthBridge.app
+          rm -rf Payload
+          mkdir -p Payload
+          cp -R "$APP" Payload/
+          zip -qr HealthBridge.ipa Payload/
+          ls -la HealthBridge.ipa
+        working-directory: ios
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: HealthBridge-ipa
+          path: |
+            ios/HealthBridge.ipa
+            ios/build/entitlements-verified.plist
+          if-no-files-found: error

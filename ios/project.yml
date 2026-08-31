@@ -1,0 +1,74 @@
+# XcodeGen project specification for the HealthBridge iOS HealthKit collector.
+#
+# Regenerate the Xcode project on a macOS runner (or a Mac) with:
+#   cd ios && xcodegen generate
+#
+# The bundle identifier is exposed as a single configurable knob (see
+# HealthBridge.xcconfig -> HEALTHBRIDGE_BUNDLE_ID). Override it per build with:
+#   xcodebuild ... PRODUCT_BUNDLE_IDENTIFIER=com.yourteam.healthbridge
+# or by editing HealthBridge.xcconfig. It is deliberately NOT hardcoded in source.
+
+name: HealthBridge
+
+options:
+  bundleIdPrefix: com.haru
+  deploymentTarget:
+    iOS: "16.0"
+  createIntermediateGroups: true
+
+configs:
+  Debug: debug
+  Release: release
+
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    IPHONEOS_DEPLOYMENT_TARGET: "16.0"
+
+targets:
+  HealthBridge:
+    type: application
+    platform: iOS
+    sources:
+      - HealthBridge
+    configFiles:
+      Debug: HealthBridge.xcconfig
+      Release: HealthBridge.xcconfig
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(HEALTHBRIDGE_BUNDLE_ID)
+        PRODUCT_NAME: HealthBridge
+        INFOPLIST_FILE: HealthBridge/Info.plist
+        CODE_SIGN_ENTITLEMENTS: HealthBridge/HealthBridge.entitlements
+        CODE_SIGN_STYLE: Manual
+        GENERATE_INFOPLIST_FILE: NO
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+
+  HealthBridgeTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - HealthBridgeTests
+    dependencies:
+      - target: HealthBridge
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.haru.healthbridge.tests
+        CODE_SIGN_STYLE: Manual
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_HOST: $(BUILT_PRODUCTS_DIR)/HealthBridge.app/HealthBridge
+        BUNDLE_LOADER: $(TEST_HOST)
+
+schemes:
+  HealthBridge:
+    build:
+      targets:
+        HealthBridge: all
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - HealthBridgeTests
+    archive:
+      config: Release

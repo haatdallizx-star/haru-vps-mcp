@@ -89,6 +89,18 @@ The public tool surface is deliberately small: gateway health, workspace directo
 - [`deploy/haru-mcp.service.example`](deploy/haru-mcp.service.example) — minimal hardened systemd starting point.
 - [`deploy/Caddyfile.example`](deploy/Caddyfile.example) — intentionally fail-closed public reverse-proxy example.
 
+## HealthKit iOS collector (Phase 2A)
+
+The HealthKit bridge has a phone-side collector, `ios/`, built with XcodeGen and
+packaged as an ad-hoc-signed `.ipa` by a macOS GitHub Actions workflow. It reads
+HealthKit quantity samples (heart rate / HRV / steps), durably queues them, and
+uploads them to your VPS ingest endpoint. Its HealthKit entitlements are
+verified by the build gate.
+
+- [`docs/healthkit-ios-collector.md`](docs/healthkit-ios-collector.md) — architecture, build, IPA download, entitlements, and not-done-yet scope.
+- [`ios/README.md`](ios/README.md) — regenerate/build/configure quick reference.
+- `.github/workflows/ios-build.yml` — macOS build + entitlement gate + IPA artifact.
+
 ## Upstream projects
 
 The gateway imports the MCP Python SDK, AnyIO, and typing-extensions. The optional reference workspace composes `mcp-proxy`, the Model Context Protocol filesystem server, and `shell-exec-mcp` without vendoring their source.
