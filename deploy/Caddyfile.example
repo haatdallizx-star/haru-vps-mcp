@@ -1,7 +1,7 @@
 # Safe public default: keep MCP fail-closed while exposing only the authenticated
-# HealthKit ingest route. The HealthKit service performs its own bearer-token auth.
+# HealthKit API prefix. The HealthKit service performs its own bearer-token auth.
 mcp.example.com {
-    handle /healthkit/v1/ingest {
+    handle /healthkit/v1/* {
         reverse_proxy 127.0.0.1:8770
     }
 
