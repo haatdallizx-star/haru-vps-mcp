@@ -49,13 +49,28 @@ jobs:
       - name: Run unit tests (iPhone simulator)
         run: |
           set -o pipefail
+          # Pick an available iPhone simulator dynamically (a hardcoded name can
+          # miss because some device names only exist on older iOS runtimes).
+          UDID=$(xcrun simctl list devices available -j 2>/dev/null | python3 -c '
+import sys, json
+d = json.load(sys.stdin)
+devs = []
+for runtime, group in d.get("devices", {}).items():
+    for dev in group:
+        if dev.get("isAvailable") and "iPhone" in dev.get("name", ""):
+            devs.append((runtime, dev["udid"]))
+devs.sort(reverse=True)   # newest simulator runtime first
+print(devs[0][1] if devs else "")
+')
+          if [ -z "$UDID" ]; then echo "No available iPhone simulator" && exit 1; fi
+          echo "Using simulator UDID $UDID"
           xcodebuild test \
             -project HealthBridge.xcodeproj \
             -scheme "$SCHEME" \
-            -destination 'platform=iOS Simulator,name=iPhone 15' \
+            -destination "id=$UDID" \
             -derivedDataPath build \
             CODE_SIGNING_ALLOWED=NO \
-            | tail -30
+            | tail -40
         working-directory: ios
 
       - name: Build .app (Release, iphoneos)
