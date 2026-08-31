@@ -1,0 +1,37 @@
+name: HealthBridge iOS
+
+on:
+  push:
+    branches: [healthkit-ios-bridge]
+    paths:
+      - 'ios/HealthBridge/**'
+      - '.github/workflows/healthbridge-ios.yml'
+  pull_request:
+    paths:
+      - 'ios/HealthBridge/**'
+      - '.github/workflows/healthbridge-ios.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Select available iPhone simulator
+        id: sim
+        shell: bash
+        run: |
+          set -euo pipefail
+          device=$(xcrun simctl list devices available -j | python3 -c 'import json,sys; d=json.load(sys.stdin)["devices"]; print(next(x["name"] for runtime in d.values() for x in runtime if x["name"].startswith("iPhone")))')
+          echo "device=$device" >> "$GITHUB_OUTPUT"
+      - name: Generate project
+        working-directory: ios/HealthBridge
+        run: xcodegen generate
+      - name: Run unit tests
+        working-directory: ios/HealthBridge
+        run: xcodebuild test -project HealthBridge.xcodeproj -scheme HealthBridge -destination 'platform=iOS Simulator,name=${{ steps.sim.outputs.device }}' CODE_SIGNING_ALLOWED=NO
