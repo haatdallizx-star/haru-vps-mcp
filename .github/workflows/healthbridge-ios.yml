@@ -10,6 +10,7 @@ on:
     paths:
       - 'ios/HealthBridge/**'
       - '.github/workflows/healthbridge-ios.yml'
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -19,9 +20,9 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  test:
+  test-and-build:
     runs-on: macos-15
-    timeout-minutes: 20
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
       - name: Select Xcode 16.4
@@ -43,3 +44,29 @@ jobs:
       - name: Run unit tests
         working-directory: ios/HealthBridge
         run: xcodebuild test -project HealthBridge.xcodeproj -scheme HealthBridge -destination 'platform=iOS Simulator,id=${{ steps.sim.outputs.udid }}' -destination-timeout 60 CODE_SIGNING_ALLOWED=NO
+      - name: Build unsigned device app
+        working-directory: ios/HealthBridge
+        run: |
+          xcodebuild build -project HealthBridge.xcodeproj -scheme HealthBridge -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build CODE_SIGNING_ALLOWED=NO
+      - name: Ad-hoc sign and verify entitlements
+        working-directory: ios/HealthBridge
+        run: |
+          set -euo pipefail
+          app="$PWD/build/Build/Products/Release-iphoneos/HealthBridge.app"
+          if [[ -d "$app/Frameworks/HealthBridgeCore.framework" ]]; then
+            codesign --force --sign - "$app/Frameworks/HealthBridgeCore.framework"
+          fi
+          codesign --force --sign - --entitlements HealthBridge.entitlements "$app"
+          bash scripts/verify-project.sh "$app"
+      - name: Package IPA
+        working-directory: ios/HealthBridge
+        run: |
+          rm -rf Payload HealthBridge-unsigned.ipa
+          mkdir Payload
+          cp -R build/Build/Products/Release-iphoneos/HealthBridge.app Payload/
+          ditto -c -k --sequesterRsrc --keepParent Payload HealthBridge-unsigned.ipa
+      - uses: actions/upload-artifact@v4
+        with:
+          name: HealthBridge-unsigned
+          path: ios/HealthBridge/HealthBridge-unsigned.ipa
+          if-no-files-found: error
