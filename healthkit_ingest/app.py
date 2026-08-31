@@ -59,27 +59,37 @@ class AuthFailureLimiter:
                 break
             self._failures.popitem(last=False)
 
-    def check_and_record_failure(self, source: str) -> bool:
+    def check_and_record_failure(self, *sources: str) -> bool:
         now = time.monotonic()
         cutoff = now - self.window_seconds
         self._prune_expired_sources(now)
-        attempts = self._failures.pop(source, deque())
-        while attempts and attempts[0] <= cutoff:
-            attempts.popleft()
-        limited = len(attempts) >= self.max_failures
-        if not limited:
-            attempts.append(now)
-        self._failures[source] = attempts
+        limited = False
+        for source in dict.fromkeys(sources):
+            attempts = self._failures.pop(source, deque())
+            while attempts and attempts[0] <= cutoff:
+                attempts.popleft()
+            limited = limited or len(attempts) >= self.max_failures
+            if len(attempts) < self.max_failures:
+                attempts.append(now)
+            self._failures[source] = attempts
         while len(self._failures) > self.max_sources:
             self._failures.popitem(last=False)
         return limited
 
-    def clear(self, source: str) -> None:
-        self._failures.pop(source, None)
+    def clear(self, *sources: str) -> None:
+        for source in dict.fromkeys(sources):
+            self._failures.pop(source, None)
 
 
-def _request_source(request: Request) -> str:
+def _immediate_peer(request: Request) -> str:
     peer = request.client.host if request.client is not None else "unknown"
+    try:
+        return str(ipaddress.ip_address(peer))
+    except ValueError:
+        return peer
+
+
+def _request_source(request: Request, *, peer: str) -> str:
     try:
         peer_ip = ipaddress.ip_address(peer)
     except ValueError:
@@ -154,11 +164,12 @@ def build_app(settings: HealthKitSettings) -> Starlette:
             pass
 
     async def ingest(request: Request) -> JSONResponse:
-        source = _request_source(request)
+        peer = _immediate_peer(request)
+        source = _request_source(request, peer=peer)
         if _authorized(request, settings.bearer_token):
-            limiter.clear(source)
+            limiter.clear(source, peer)
         else:
-            if limiter.check_and_record_failure(source):
+            if limiter.check_and_record_failure(source, peer):
                 return _json_error(
                     429,
                     "auth_rate_limited",

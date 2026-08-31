@@ -218,12 +218,19 @@ def test_auth_failures_are_limited_per_forwarded_source_from_trusted_proxy(tmp_p
             content=b"not-json",
             headers={**auth("wrong-token-xxxxxxxx"), "X-Forwarded-For": "198.51.100.10"},
         )
-        other_source = client.post(
+    with TestClient(app, client=("127.0.0.2", 50000)) as other_peer:
+        limited_from_other_peer = other_peer.post(
+            "/healthkit/v1/ingest",
+            content=b"not-json",
+            headers={**auth("wrong-token-xxxxxxxx"), "X-Forwarded-For": "198.51.100.10"},
+        )
+        other_source = other_peer.post(
             "/healthkit/v1/ingest",
             content=b"not-json",
             headers={**auth("wrong-token-xxxxxxxx"), "X-Forwarded-For": "198.51.100.11"},
         )
     assert limited.status_code == 429
+    assert limited_from_other_peer.status_code == 429
     assert other_source.status_code == 401
 
 
@@ -250,25 +257,77 @@ def test_untrusted_peer_cannot_select_limiter_source_with_forwarded_header(tmp_p
 
 def test_unauthorized_and_limited_requests_do_not_consume_body(tmp_path, monkeypatch):
     app = build_app(settings(tmp_path))
+
+    async def body_must_not_be_read(self):
+        raise AssertionError("unauthorized request body was consumed")
+        yield b""  # pragma: no cover
+
+    monkeypatch.setattr(Request, "stream", body_must_not_be_read)
     with TestClient(app, client=("127.0.0.1", 50000)) as client:
-        for _ in range(5):
+        unauthorized = client.post(
+            "/healthkit/v1/ingest",
+            headers={**auth("wrong-token-yyyyyyyy"), "X-Forwarded-For": "198.51.100.10"},
+        )
+        for _ in range(4):
             assert client.post(
                 "/healthkit/v1/ingest",
                 headers={**auth("wrong-token-xxxxxxxx"), "X-Forwarded-For": "198.51.100.10"},
             ).status_code == 401
-
-        async def body_must_not_be_read(self):
-            raise AssertionError("unauthorized request body was consumed")
-            yield b""  # pragma: no cover
-
-        monkeypatch.setattr(Request, "stream", body_must_not_be_read)
-        unauthorized = client.post("/healthkit/v1/ingest", headers=auth("wrong-token-yyyyyyyy"))
         limited = client.post(
             "/healthkit/v1/ingest",
             headers={**auth("wrong-token-yyyyyyyy"), "X-Forwarded-For": "198.51.100.10"},
         )
     assert unauthorized.status_code == 401
     assert limited.status_code == 429
+
+
+def test_rotating_forwarded_sources_hit_immediate_peer_limit_without_reading_body(tmp_path, monkeypatch):
+    app = build_app(settings(tmp_path))
+    with TestClient(app, client=("127.0.0.1", 50000)) as client:
+        for index in range(5):
+            response = client.post(
+                "/healthkit/v1/ingest",
+                headers={
+                    **auth("wrong-token-xxxxxxxx"),
+                    "X-Forwarded-For": f"198.51.100.{index + 1}",
+                },
+            )
+            assert response.status_code == 401
+
+        async def body_must_not_be_read(self):
+            raise AssertionError("rate-limited request body was consumed")
+            yield b""  # pragma: no cover
+
+        monkeypatch.setattr(Request, "stream", body_must_not_be_read)
+        limited = client.post(
+            "/healthkit/v1/ingest",
+            content=b"must-not-be-read",
+            headers={
+                **auth("wrong-token-yyyyyyyy"),
+                "X-Forwarded-For": "198.51.100.99",
+            },
+        )
+    assert limited.status_code == 429
+
+
+def test_valid_token_bypasses_full_immediate_peer_failure_bucket(tmp_path):
+    app = build_app(settings(tmp_path))
+    with TestClient(app, client=("127.0.0.1", 50000)) as client:
+        for index in range(5):
+            assert client.post(
+                "/healthkit/v1/ingest",
+                headers={
+                    **auth("wrong-token-xxxxxxxx"),
+                    "X-Forwarded-For": f"198.51.100.{index + 1}",
+                },
+            ).status_code == 401
+        response = client.post(
+            "/healthkit/v1/ingest",
+            json=payload([sample("valid-after-failures")]),
+            headers={**auth(), "X-Forwarded-For": "198.51.100.99"},
+        )
+    assert response.status_code == 200
+    assert response.json() == {"accepted": 1, "duplicates": 0, "rejected": 0}
 
 
 def test_auth_failure_limiter_keyspace_is_bounded(tmp_path):
@@ -280,5 +339,5 @@ def test_auth_failure_limiter_keyspace_is_bounded(tmp_path):
                 "/healthkit/v1/ingest",
                 headers={**auth("wrong-token-xxxxxxxx"), "X-Forwarded-For": source},
             )
-            assert response.status_code == 401
-    assert app.state.auth_failure_limiter.tracked_source_count <= 1_024
+            assert response.status_code in {401, 429}
+    assert app.state.auth_failure_limiter.tracked_source_count == 1_024

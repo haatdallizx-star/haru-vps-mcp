@@ -10,7 +10,7 @@ from .settings import load_healthkit_settings
 def main() -> int:
     cfg = load_healthkit_settings()
     app = build_app(cfg)
-    uvicorn.run(app, host=cfg.host, port=cfg.port, log_level="info")
+    uvicorn.run(app, host=cfg.host, port=cfg.port, log_level="info", proxy_headers=False)
     return 0
 
 
