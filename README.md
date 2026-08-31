@@ -83,17 +83,19 @@ The public tool surface is deliberately small: gateway health, workspace directo
 
 ## HealthKit ingest service
 
-The HealthKit bridge uses a separate loopback service and a separate SQLite database. It does not replace or migrate any existing shortcut-based health path.
+The HealthKit bridge uses a separate loopback service and a separate SQLite database. It does not replace or migrate any existing shortcut-based health path. Run it as the distinct `haru-healthkit` system account, never as the `haru` workspace identity; this keeps the mode-0700 database and process environment bearer token outside the arbitrary-shell account's Unix access boundary.
 
 Deployment order:
 
 1. Install the updated package into the Haru virtual environment.
-2. Create `/var/lib/haru-healthkit` for the dedicated service account with restrictive permissions.
-3. Create `/etc/haru-mcp/healthkit-ingest.env` from the example and generate a real random bearer token outside Git.
+2. Create the non-login `haru-healthkit` system account and its mode-0700 `/var/lib/haru-healthkit` state directory.
+3. Create `/etc/haru-healthkit/healthkit-ingest.env` from the example, readable only by root and `haru-healthkit`, and generate a real random bearer token outside Git. The checked-in placeholder is deliberately rejected at startup.
 4. Install and start only `healthkit-ingest.service`; it binds to `127.0.0.1:8770`.
-5. Add/reload the narrow Caddy `/healthkit/v1/ingest` route.
-6. Export `HARU_HEALTHKIT_PROBE_URL` and `HARU_HEALTHKIT_PROBE_TOKEN`, then run `python scripts/probe-healthkit-ingest.py`.
+5. Add/reload the narrow Caddy `/healthkit/v1/ingest` route. That example overwrites `X-Forwarded-For` with Caddy's observed remote address before crossing the loopback trusted-proxy boundary; do not preserve a client-supplied value.
+6. Export an HTTPS `HARU_HEALTHKIT_PROBE_URL` and `HARU_HEALTHKIT_PROBE_TOKEN`, then run `python scripts/probe-healthkit-ingest.py`. The credentialed probe refuses plaintext URLs and redirects.
 7. Confirm the existing `haru-mcp` gateway and its tests remain healthy.
+
+Repeated bad bearer tokens are limited per resolved source to five failures per 60 seconds. The in-process limiter retains at most 1,024 source keys; authenticated requests bypass and clear their source's failures. Forwarded addresses are considered only from the documented loopback Caddy boundary.
 
 Rollback removes only the HealthKit Caddy route and `healthkit-ingest.service`. Do not delete or migrate existing shortcut health data as part of this rollback.
 

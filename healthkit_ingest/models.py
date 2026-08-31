@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+import math
 from typing import Any, Mapping
 
 NUMERIC_UNITS = {
@@ -93,7 +94,13 @@ def _parse_aware_datetime(value: object, *, field_name: str) -> tuple[datetime, 
         raise PayloadValidationError("invalid_timestamp", f"{field_name} must be ISO-8601") from None
     if parsed.tzinfo is None or parsed.utcoffset() is None:
         raise PayloadValidationError("invalid_timestamp", f"{field_name} must include a timezone")
-    utc = parsed.astimezone(timezone.utc)
+    try:
+        utc = parsed.astimezone(timezone.utc)
+    except OverflowError:
+        raise PayloadValidationError(
+            "invalid_timestamp",
+            f"{field_name} must normalize within the supported datetime range",
+        ) from None
     normalized = utc.isoformat().replace("+00:00", "Z")
     return utc, normalized
 
@@ -134,9 +141,15 @@ def _parse_numeric_sample(sample: Mapping[str, Any], sample_type: str) -> Numeri
     value = sample.get("value")
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise PayloadValidationError("invalid_value", "numeric sample value must be a number")
+    try:
+        normalized_value = float(value)
+    except OverflowError:
+        raise PayloadValidationError("invalid_value", "numeric sample value must be representable") from None
+    if not math.isfinite(normalized_value):
+        raise PayloadValidationError("invalid_value", "numeric sample value must be finite")
     return NumericSample(
         type=sample_type,
-        value=float(value),
+        value=normalized_value,
         unit=unit,
         **_shared_sample_fields(sample),
     )
@@ -157,7 +170,8 @@ def _parse_sleep_sample(sample: Mapping[str, Any]) -> SleepSample:
 
 def parse_batch(payload: object, *, max_batch_samples: int) -> IngestBatch:
     root = _require_object(payload, field_name="payload")
-    if root.get("schema_version") != 1:
+    schema_version = root.get("schema_version")
+    if type(schema_version) is not int or schema_version != 1:
         raise PayloadValidationError("unsupported_schema", "schema_version must equal 1")
 
     device_id = _require_nonempty_string(root.get("device_id"), field_name="device_id")

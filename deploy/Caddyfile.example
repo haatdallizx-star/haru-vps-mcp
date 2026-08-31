@@ -2,7 +2,10 @@
 # HealthKit ingest route. The HealthKit service performs its own bearer-token auth.
 mcp.example.com {
     handle /healthkit/v1/ingest {
-        reverse_proxy 127.0.0.1:8770
+        reverse_proxy 127.0.0.1:8770 {
+            # This overwrite defines the app's trusted forwarded-source boundary.
+            header_up X-Forwarded-For {remote_host}
+        }
     }
 
     handle {

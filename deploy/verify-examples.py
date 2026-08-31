@@ -42,16 +42,18 @@ def verify_healthkit_examples() -> None:
     require_lines(
         unit,
         (
-            "User=haru",
-            "Group=haru",
+            "User=haru-healthkit",
+            "Group=haru-healthkit",
             "WorkingDirectory=/opt/haru-mcp",
-            "EnvironmentFile=/etc/haru-mcp/healthkit-ingest.env",
+            "EnvironmentFile=/etc/haru-healthkit/healthkit-ingest.env",
             "ExecStart=/opt/haru-mcp/venv/bin/healthkit-ingest",
             "Restart=on-failure",
             "StateDirectory=haru-healthkit",
             "StateDirectoryMode=0700",
             "NoNewPrivileges=true",
             "ProtectSystem=strict",
+            "ProtectProc=invisible",
+            "ProcSubset=pid",
             "RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6",
             "IPAddressAllow=127.0.0.0/8",
             "IPAddressAllow=::1/128",
@@ -77,6 +79,8 @@ def verify_healthkit_examples() -> None:
         raise SystemExit("Caddy must proxy only the HealthKit ingest route to 127.0.0.1:8770")
     if caddy.count("reverse_proxy 127.0.0.1:8770") != 1:
         raise SystemExit("Caddy must contain exactly one HealthKit ingest upstream")
+    if "header_up X-Forwarded-For {remote_host}" not in caddy:
+        raise SystemExit("Caddy must overwrite the forwarded source at the trusted proxy boundary")
 
 
 def verify_static() -> None:

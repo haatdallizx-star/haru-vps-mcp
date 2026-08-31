@@ -117,11 +117,20 @@ def test_naive_timestamp_is_rejected():
         parse_batch(batch([numeric_sample(start_at="2026-08-31T05:00:00")]), max_batch_samples=800)
 
 
-def test_schema_version_must_equal_one():
+@pytest.mark.parametrize("schema_version", [2, True, 1.0])
+def test_schema_version_must_be_exact_integer_one(schema_version):
     payload = batch([numeric_sample()])
-    payload["schema_version"] = 2
+    payload["schema_version"] = schema_version
     with pytest.raises(PayloadValidationError, match="schema_version"):
         parse_batch(payload, max_batch_samples=800)
+
+
+def test_aware_timestamp_that_overflows_during_utc_normalization_is_rejected():
+    with pytest.raises(PayloadValidationError, match="start_at"):
+        parse_batch(
+            batch([numeric_sample(start_at="9999-12-31T23:59:59-23:59")]),
+            max_batch_samples=800,
+        )
 
 
 def test_batch_may_not_exceed_800_samples():
@@ -164,3 +173,14 @@ def test_device_id_and_samples_shape_are_required():
     payload["samples"] = "not-a-list"
     with pytest.raises(PayloadValidationError, match="samples"):
         parse_batch(payload, max_batch_samples=800)
+
+
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")])
+def test_non_finite_numeric_values_are_rejected(value):
+    with pytest.raises(PayloadValidationError, match="finite"):
+        parse_batch(batch([numeric_sample(value=value)]), max_batch_samples=800)
+
+
+def test_huge_integer_is_a_client_validation_error():
+    with pytest.raises(PayloadValidationError, match="representable"):
+        parse_batch(batch([numeric_sample(value=10**10_000)]), max_batch_samples=800)
