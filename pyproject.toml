@@ -19,12 +19,15 @@ dependencies = [
   "mcp>=1.27,<2",
   "anyio>=4,<5",
   "typing-extensions>=4.12,<5",
+  "starlette>=0.47,<1",
+  "uvicorn>=0.35,<1",
 ]
 
 [project.optional-dependencies]
 test = [
   "pytest>=8,<9",
   "pytest-asyncio>=0.23,<1",
+  "httpx>=0.28,<1",
 ]
 
 [project.urls]
@@ -34,10 +37,11 @@ Documentation = "https://github.com/kohaku4yz/haru-vps-mcp#readme"
 
 [project.scripts]
 haru-mcp = "haru_mcp.server:main"
+healthkit-ingest = "healthkit_ingest.main:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["haru_mcp*"]
+include = ["haru_mcp*", "healthkit_ingest*"]
 
 [tool.setuptools.package-data]
 haru_mcp = ["HARU-INSTRUCTIONS.md"]
