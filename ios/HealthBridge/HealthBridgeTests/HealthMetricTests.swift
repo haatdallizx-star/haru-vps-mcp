@@ -1,6 +1,6 @@
 import HealthKit
 import XCTest
-@testable import HealthBridge
+@testable import HealthBridgeCore
 
 final class HealthMetricTests: XCTestCase {
     func testPhaseOneContainsExactlyFourMetrics() {
