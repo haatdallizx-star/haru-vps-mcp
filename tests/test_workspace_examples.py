@@ -55,3 +55,18 @@ def test_basic_gateway_example_uses_same_non_sudo_identity():
     unit = (ROOT / "deploy" / "haru-mcp.service.example").read_text()
     assert "User=haru\n" in unit
     assert "Group=haru\n" in unit
+
+
+def test_healthkit_service_uses_distinct_unix_identity_and_state():
+    unit = (ROOT / "deploy" / "healthkit-ingest.service.example").read_text()
+    assert "User=haru-healthkit\n" in unit
+    assert "Group=haru-healthkit\n" in unit
+    assert "User=haru\n" not in unit
+    assert "Group=haru\n" not in unit
+    assert "StateDirectory=haru-healthkit\n" in unit
+    assert "StateDirectoryMode=0700\n" in unit
+
+
+def test_healthkit_proxy_overwrites_forwarded_source_at_trusted_boundary():
+    caddy = (ROOT / "deploy" / "Caddyfile.example").read_text()
+    assert "header_up X-Forwarded-For {remote_host}" in caddy

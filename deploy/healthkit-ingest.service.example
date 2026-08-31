@@ -5,13 +5,13 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=haru
-Group=haru
+User=haru-healthkit
+Group=haru-healthkit
 WorkingDirectory=/opt/haru-mcp
 UMask=0077
 
 Environment=PYTHONDONTWRITEBYTECODE=1
-EnvironmentFile=/etc/haru-mcp/healthkit-ingest.env
+EnvironmentFile=/etc/haru-healthkit/healthkit-ingest.env
 ExecStart=/opt/haru-mcp/venv/bin/healthkit-ingest
 Restart=on-failure
 RestartSec=5s
@@ -26,6 +26,8 @@ PrivateTmp=true
 PrivateDevices=true
 ProtectSystem=strict
 ProtectHome=true
+ProtectProc=invisible
+ProcSubset=pid
 ProtectKernelTunables=true
 ProtectKernelModules=true
 ProtectControlGroups=true

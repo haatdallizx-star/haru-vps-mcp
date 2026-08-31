@@ -25,6 +25,10 @@ class IngestStatus:
 
 
 _SCHEMA = """
+CREATE TABLE IF NOT EXISTS healthkit_sample_uuids (
+    uuid TEXT PRIMARY KEY,
+    sample_type TEXT NOT NULL CHECK(sample_type IN ('heart_rate','hrv','steps','sleep'))
+);
 CREATE TABLE IF NOT EXISTS healthkit_numeric_samples (
     uuid TEXT PRIMARY KEY,
     type TEXT NOT NULL CHECK(type IN ('heart_rate','hrv','steps')),
@@ -69,11 +73,15 @@ def _utc_text(value: datetime) -> str:
 
 
 class HealthKitStore:
+    _BUSY_TIMEOUT_SECONDS = 5.0
+    _FAILURE_CATEGORIES = frozenset({"validation_failure", "storage_failure"})
+
     def __init__(self, path: Path):
         self.path = Path(path)
 
     def _connect(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self.path)
+        conn = sqlite3.connect(self.path, timeout=self._BUSY_TIMEOUT_SECONDS)
+        conn.execute("PRAGMA busy_timeout=5000")
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA foreign_keys=ON")
         return conn
@@ -84,12 +92,34 @@ class HealthKitStore:
             conn.executescript(_SCHEMA)
             conn.execute(
                 """
+                INSERT OR IGNORE INTO healthkit_sample_uuids (uuid, sample_type)
+                SELECT uuid, type FROM healthkit_numeric_samples
+                """
+            )
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO healthkit_sample_uuids (uuid, sample_type)
+                SELECT uuid, 'sleep' FROM healthkit_sleep_samples
+                """
+            )
+            conn.execute(
+                """
                 INSERT INTO healthkit_ingest_status (
                     singleton, last_ingest_at, last_successful_batch_at, last_error_at, last_error_category
                 ) VALUES (1, NULL, NULL, NULL, NULL)
                 ON CONFLICT(singleton) DO NOTHING
                 """
             )
+
+    def _claim_uuid(self, conn: sqlite3.Connection, *, uuid: str, sample_type: str) -> bool:
+        cursor = conn.execute(
+            """
+            INSERT INTO healthkit_sample_uuids (uuid, sample_type) VALUES (?, ?)
+            ON CONFLICT(uuid) DO NOTHING
+            """,
+            (uuid, sample_type),
+        )
+        return cursor.rowcount == 1
 
     def _insert_numeric(self, conn: sqlite3.Connection, sample: NumericSample, received_at: str) -> bool:
         cursor = conn.execute(
@@ -148,26 +178,42 @@ class HealthKitStore:
         duplicates = 0
         with self._connect() as conn:
             for sample in batch.samples:
+                if not self._claim_uuid(conn, uuid=sample.uuid, sample_type=sample.type):
+                    duplicates += 1
+                    continue
                 if isinstance(sample, NumericSample):
                     inserted = self._insert_numeric(conn, sample, received_text)
                 else:
                     inserted = self._insert_sleep(conn, sample, received_text)
-                if inserted:
-                    accepted += 1
-                else:
-                    duplicates += 1
+                if not inserted:
+                    raise sqlite3.IntegrityError("claimed HealthKit UUID was not inserted")
+                accepted += 1
             conn.execute(
                 """
                 UPDATE healthkit_ingest_status
                 SET last_ingest_at = ?,
-                    last_successful_batch_at = ?,
-                    last_error_at = NULL,
-                    last_error_category = NULL
+                    last_successful_batch_at = ?
                 WHERE singleton = 1
                 """,
                 (received_text, received_text),
             )
         return IngestResult(accepted=accepted, duplicates=duplicates)
+
+    def record_failure(self, *, category: str, occurred_at: datetime) -> None:
+        if category not in self._FAILURE_CATEGORIES:
+            raise ValueError("unsupported HealthKit failure category")
+        occurred_text = _utc_text(occurred_at)
+        with self._connect() as conn:
+            conn.execute(
+                """
+                UPDATE healthkit_ingest_status
+                SET last_ingest_at = ?,
+                    last_error_at = ?,
+                    last_error_category = ?
+                WHERE singleton = 1
+                """,
+                (occurred_text, occurred_text, category),
+            )
 
     def status(self) -> IngestStatus:
         with self._connect() as conn:

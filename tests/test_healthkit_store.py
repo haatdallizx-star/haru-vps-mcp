@@ -1,4 +1,6 @@
 import sqlite3
+import threading
+import time
 from datetime import datetime, timezone
 
 import pytest
@@ -54,6 +56,7 @@ def test_initialize_creates_only_healthkit_tables(tmp_path):
     with sqlite3.connect(path) as conn:
         tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
     assert tables == {
+        "healthkit_sample_uuids",
         "healthkit_numeric_samples",
         "healthkit_sleep_samples",
         "healthkit_ingest_status",
@@ -137,3 +140,73 @@ def test_status_tracks_last_successful_ingest(tmp_path):
     assert status.last_successful_batch_at == "2026-08-31T07:30:00Z"
     assert status.last_error_at is None
     assert status.last_error_category is None
+
+
+def test_uuid_namespace_is_global_across_numeric_and_sleep(tmp_path):
+    path = tmp_path / "healthkit.sqlite3"
+    store = HealthKitStore(path)
+    store.initialize()
+    received = datetime(2026, 8, 31, 7, 30, tzinfo=timezone.utc)
+
+    first = store.ingest(
+        parse_batch(payload([numeric("shared-uuid")]), max_batch_samples=800),
+        received_at=received,
+    )
+    second = store.ingest(
+        parse_batch(payload([sleep("shared-uuid")]), max_batch_samples=800),
+        received_at=received,
+    )
+
+    assert (first.accepted, first.duplicates) == (1, 0)
+    assert (second.accepted, second.duplicates) == (0, 1)
+    with sqlite3.connect(path) as conn:
+        assert conn.execute("SELECT COUNT(*) FROM healthkit_numeric_samples").fetchone()[0] == 1
+        assert conn.execute("SELECT COUNT(*) FROM healthkit_sleep_samples").fetchone()[0] == 0
+        assert conn.execute("SELECT COUNT(*) FROM healthkit_sample_uuids").fetchone()[0] == 1
+
+
+def test_last_failure_is_preserved_after_later_success(tmp_path):
+    store = HealthKitStore(tmp_path / "healthkit.sqlite3")
+    store.initialize()
+    failed_at = datetime(2026, 8, 31, 7, 29, tzinfo=timezone.utc)
+    success_at = datetime(2026, 8, 31, 7, 30, tzinfo=timezone.utc)
+
+    store.record_failure(category="validation_failure", occurred_at=failed_at)
+    store.ingest(
+        parse_batch(payload([numeric()]), max_batch_samples=800),
+        received_at=success_at,
+    )
+
+    status = store.status()
+    assert status.last_ingest_at == "2026-08-31T07:30:00Z"
+    assert status.last_successful_batch_at == "2026-08-31T07:30:00Z"
+    assert status.last_error_at == "2026-08-31T07:29:00Z"
+    assert status.last_error_category == "validation_failure"
+
+
+def test_write_waits_for_a_short_sqlite_lock_and_then_succeeds(tmp_path):
+    path = tmp_path / "healthkit.sqlite3"
+    store = HealthKitStore(path)
+    store.initialize()
+    batch = parse_batch(payload([numeric()]), max_batch_samples=800)
+    locker = sqlite3.connect(path)
+    locker.execute("BEGIN IMMEDIATE")
+    result = []
+    errors = []
+
+    def ingest_in_thread():
+        try:
+            result.append(store.ingest(batch, received_at=datetime.now(timezone.utc)))
+        except Exception as exc:  # pragma: no cover - asserted below
+            errors.append(exc)
+
+    worker = threading.Thread(target=ingest_in_thread)
+    worker.start()
+    time.sleep(0.1)
+    locker.commit()
+    locker.close()
+    worker.join(timeout=2)
+
+    assert not worker.is_alive()
+    assert errors == []
+    assert [(item.accepted, item.duplicates) for item in result] == [(1, 0)]

@@ -164,3 +164,14 @@ def test_device_id_and_samples_shape_are_required():
     payload["samples"] = "not-a-list"
     with pytest.raises(PayloadValidationError, match="samples"):
         parse_batch(payload, max_batch_samples=800)
+
+
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")])
+def test_non_finite_numeric_values_are_rejected(value):
+    with pytest.raises(PayloadValidationError, match="finite"):
+        parse_batch(batch([numeric_sample(value=value)]), max_batch_samples=800)
+
+
+def test_huge_integer_is_a_client_validation_error():
+    with pytest.raises(PayloadValidationError, match="representable"):
+        parse_batch(batch([numeric_sample(value=10**10_000)]), max_batch_samples=800)

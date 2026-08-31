@@ -11,6 +11,7 @@ DEFAULT_PORT = 8770
 DEFAULT_MAX_BATCH_SAMPLES = 800
 DEFAULT_MAX_BODY_BYTES = 2_000_000
 _LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
+_INVALID_TOKEN_MARKERS = ("replace_with", "changeme", "change-me", "example_token", "your_token")
 
 
 class HealthKitSettingsError(ValueError):
@@ -53,8 +54,16 @@ def load_healthkit_settings(*, env: Mapping[str, str] | None = None) -> HealthKi
         raise HealthKitSettingsError("HARU_HEALTHKIT_PORT is out of range")
 
     token = raw_env.get("HARU_HEALTHKIT_TOKEN")
-    if token is None or len(token) < 16:
-        raise HealthKitSettingsError("HARU_HEALTHKIT_TOKEN must be at least 16 characters")
+    token_is_invalid = (
+        token is None
+        or len(token) < 16
+        or token != token.strip()
+        or any(character.isspace() for character in token)
+        or len(set(token)) < 4
+        or any(marker in token.casefold() for marker in _INVALID_TOKEN_MARKERS)
+    )
+    if token_is_invalid:
+        raise HealthKitSettingsError("HARU_HEALTHKIT_TOKEN must be a non-example token of at least 16 characters")
 
     database_raw = raw_env.get("HARU_HEALTHKIT_DB")
     if not database_raw:

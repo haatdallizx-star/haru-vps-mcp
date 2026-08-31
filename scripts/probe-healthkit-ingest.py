@@ -7,7 +7,8 @@ import os
 import sys
 from datetime import datetime, timezone
 from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
+from urllib.parse import urlparse
+from urllib.request import HTTPRedirectHandler, Request, build_opener
 from uuid import uuid4
 
 
@@ -15,11 +16,22 @@ def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
+class RejectRedirectHandler(HTTPRedirectHandler):
+    """Keep bearer credentials on the exact configured HTTPS origin."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
 def main() -> int:
     url = os.environ.get("HARU_HEALTHKIT_PROBE_URL")
     token = os.environ.get("HARU_HEALTHKIT_PROBE_TOKEN")
     if not url or not token:
         print("HARU_HEALTHKIT_PROBE_URL and HARU_HEALTHKIT_PROBE_TOKEN are required", file=sys.stderr)
+        return 2
+    parsed_url = urlparse(url)
+    if parsed_url.scheme != "https" or not parsed_url.hostname:
+        print("HARU_HEALTHKIT_PROBE_URL must be an absolute HTTPS URL", file=sys.stderr)
         return 2
 
     sample_id = str(uuid4())
@@ -58,7 +70,8 @@ def main() -> int:
         },
     )
     try:
-        with urlopen(request, timeout=15) as response:
+        opener = build_opener(RejectRedirectHandler())
+        with opener.open(request, timeout=15) as response:
             status = response.status
             payload = json.loads(response.read())
     except HTTPError as exc:
@@ -71,9 +84,19 @@ def main() -> int:
     if status != 200:
         print(f"HealthKit probe expected HTTP 200, got {status}", file=sys.stderr)
         return 1
+    if not isinstance(payload, dict):
+        print("HealthKit probe response contract mismatch", file=sys.stderr)
+        return 1
     accepted = payload.get("accepted")
     duplicates = payload.get("duplicates")
-    if not isinstance(accepted, int) or not isinstance(duplicates, int) or accepted + duplicates != 1:
+    rejected = payload.get("rejected")
+    counters = (accepted, duplicates, rejected)
+    if (
+        any(type(value) is not int for value in counters)
+        or any(value < 0 for value in counters)
+        or rejected != 0
+        or accepted + duplicates != 1
+    ):
         print("HealthKit probe response contract mismatch", file=sys.stderr)
         return 1
 

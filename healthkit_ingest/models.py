@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+import math
 from typing import Any, Mapping
 
 NUMERIC_UNITS = {
@@ -134,9 +135,15 @@ def _parse_numeric_sample(sample: Mapping[str, Any], sample_type: str) -> Numeri
     value = sample.get("value")
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise PayloadValidationError("invalid_value", "numeric sample value must be a number")
+    try:
+        normalized_value = float(value)
+    except OverflowError:
+        raise PayloadValidationError("invalid_value", "numeric sample value must be representable") from None
+    if not math.isfinite(normalized_value):
+        raise PayloadValidationError("invalid_value", "numeric sample value must be finite")
     return NumericSample(
         type=sample_type,
-        value=float(value),
+        value=normalized_value,
         unit=unit,
         **_shared_sample_fields(sample),
     )

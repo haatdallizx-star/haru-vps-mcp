@@ -34,6 +34,21 @@ def test_empty_token_is_rejected(tmp_path):
         load_healthkit_settings(env=env)
 
 
+@pytest.mark.parametrize(
+    "token",
+    [
+        "REPLACE_WITH_A_RANDOM_SECRET_AT_LEAST_32_CHARS",
+        "   test-secret-token   ",
+        "x" * 32,
+    ],
+)
+def test_known_or_clearly_invalid_token_is_rejected(tmp_path, token):
+    env = base_env(tmp_path) | {"HARU_HEALTHKIT_TOKEN": token}
+    with pytest.raises(HealthKitSettingsError, match="HARU_HEALTHKIT_TOKEN") as exc:
+        load_healthkit_settings(env=env)
+    assert token not in str(exc.value)
+
+
 def test_short_token_is_rejected_without_echoing_secret(tmp_path):
     env = base_env(tmp_path) | {"HARU_HEALTHKIT_TOKEN": "too-short"}
     with pytest.raises(HealthKitSettingsError) as exc:

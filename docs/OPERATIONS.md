@@ -124,18 +124,22 @@ If the secure tunnel is broken, the safe degraded state is **remote access unava
 
 ## HealthKit ingest deployment and rollback
 
-The HealthKit ingest path is intentionally independent from the existing shortcut-based health path.
+The HealthKit ingest path is intentionally independent from the existing shortcut-based health path. Its Unix boundary is also independent: the example unit runs as the non-login `haru-healthkit` account, not the `haru` account used by the arbitrary-shell workspace. Keep `/var/lib/haru-healthkit` mode 0700 and the environment file readable only by root and `haru-healthkit`; otherwise the workspace identity could read the database or bearer token through same-UID process access.
 
 Deploy it in this order:
 
 1. Install the updated Haru package/virtual environment without restarting unrelated services.
-2. Create `/var/lib/haru-healthkit` owned by the dedicated service account and mode it restrictively.
-3. Copy `deploy/healthkit-ingest.env.example` to `/etc/haru-mcp/healthkit-ingest.env` and replace the placeholder with a random bearer token generated outside Git.
+2. Create the non-login `haru-healthkit` system account and `/var/lib/haru-healthkit` owned by that account with mode 0700.
+3. Copy `deploy/healthkit-ingest.env.example` to `/etc/haru-healthkit/healthkit-ingest.env`, restrict it to root and `haru-healthkit`, and replace the placeholder with a random bearer token generated outside Git. Startup rejects the checked-in sentinel, whitespace-bearing values, and other clearly invalid token shapes.
 4. Install `healthkit-ingest.service`, run `systemctl daemon-reload`, and start only that service.
 5. Confirm it listens only on `127.0.0.1:8770`.
-6. Add/reload only the Caddy `/healthkit/v1/ingest` route.
-7. Run the synthetic probe with `HARU_HEALTHKIT_PROBE_URL` and `HARU_HEALTHKIT_PROBE_TOKEN` supplied in the operator shell environment.
+6. Add/reload only the Caddy `/healthkit/v1/ingest` route. The checked-in handler overwrites `X-Forwarded-For` with `{remote_host}`; this sanitized single address crossing from the loopback Caddy peer is the application's trusted forwarded-source boundary. Do not preserve or append a client-supplied forwarding chain.
+7. Run the synthetic probe with an HTTPS `HARU_HEALTHKIT_PROBE_URL` and `HARU_HEALTHKIT_PROBE_TOKEN` supplied in the operator shell environment. The probe refuses plaintext URLs and all redirects so its Authorization header cannot cross origins or downgrade transport.
 8. Re-check the existing Haru MCP gateway and workspace tests/health separately.
+
+The application limits repeated invalid bearer tokens per resolved source after five failures in 60 seconds, caps retained source keys at 1,024, and never reads an unauthorized or rate-limited body. A correct token is checked before limiting and clears failures for that source. If a different reverse proxy topology is used, it must provide an equivalent overwrite boundary before the loopback hop; forwarded headers from non-loopback peers or malformed/multi-hop values are ignored.
+
+Validation and storage failures update only safe status categories (`validation_failure` or `storage_failure`); raw request data and exception text are not stored. A later successful batch advances success timestamps but deliberately preserves the most recent error timestamp/category for recovery diagnostics.
 
 Rollback removes the new Caddy handler and stops/disables `healthkit-ingest.service`. Preserve `/var/lib/haru-healthkit` until data retention is decided separately. Do not delete or migrate the shortcut health database and do not restart `haru-mcp.service` merely to roll back HealthKit ingest.
 
