@@ -30,6 +30,15 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # XcodeGen 2.45.x emits a project in objectVersion 77 (Xcode 16 format),
+      # which the default Xcode 15.4 on the macos-14 runner cannot open. Xcode
+      # 16.2 is installed on this image; select it so xcodebuild can read the
+      # generated project.
+      - name: Select Xcode 16.2
+        run: |
+          sudo xcode-select -s /Applications/Xcode_16.2.app
+          xcodebuild -version
+
       - name: Install XcodeGen
         run: brew install xcodegen
 
@@ -39,6 +48,7 @@ jobs:
 
       - name: Run unit tests (iPhone simulator)
         run: |
+          set -o pipefail
           xcodebuild test \
             -project HealthBridge.xcodeproj \
             -scheme "$SCHEME" \
@@ -47,10 +57,10 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             | tail -30
         working-directory: ios
-        continue-on-error: false
 
       - name: Build .app (Release, iphoneos)
         run: |
+          set -o pipefail
           xcodebuild \
             -project HealthBridge.xcodeproj \
             -scheme "$SCHEME" \
