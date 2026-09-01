@@ -1,0 +1,168 @@
+diff --git a/Package.swift b/Package.swift
+index 8ea98c7..7cad2ff 100644
+--- a/Package.swift
++++ b/Package.swift
+@@ -147,6 +147,7 @@ let package = Package(
+             name: "XToolTests",
+             dependencies: [
+                 "XToolSupport",
++                "XKit",
+             ]
+         ),
+         .target(
+diff --git a/Sources/XKit/DeveloperServices/App IDs/Entitlements/DeveloperServicesCapability.swift b/Sources/XKit/DeveloperServices/App IDs/Entitlements/DeveloperServicesCapability.swift
+index 13bbefd..d3402ab 100644
+--- a/Sources/XKit/DeveloperServices/App IDs/Entitlements/DeveloperServicesCapability.swift	
++++ b/Sources/XKit/DeveloperServices/App IDs/Entitlements/DeveloperServicesCapability.swift	
+@@ -91,6 +91,17 @@ extension HealthKitEntitlement: EntitlementWithCapability {
+     }
+ }
+ 
++// Apple exposes background delivery as part of the HealthKit capability rather
++// than as a capability of its own, so this maps onto the same capability type.
++// Without an entry here the entitlement is unrecognized, which means free teams
++// silently lose it: DeveloperServicesAddAppOperation rebuilds `Entitlements`
++// from the recognized list only.
++extension HealthKitBackgroundDeliveryEntitlement: EntitlementWithCapability {
++    var capability: DeveloperServicesCapability {
++        DeveloperServicesCapability(.healthkit, isFree: true)
++    }
++}
++
+ extension HomeKitEntitlement: EntitlementWithCapability {
+     var capability: DeveloperServicesCapability {
+         DeveloperServicesCapability(.homekit, isFree: true)
+diff --git a/Sources/XKit/Model/Entitlements/EntitlementTypes.swift b/Sources/XKit/Model/Entitlements/EntitlementTypes.swift
+index 16c8ab1..b4738b6 100644
+--- a/Sources/XKit/Model/Entitlements/EntitlementTypes.swift
++++ b/Sources/XKit/Model/Entitlements/EntitlementTypes.swift
+@@ -28,6 +28,7 @@ extension EntitlementContainer {
+         WirelessAccessoryEntitlement.self,
+         HomeKitEntitlement.self,
+         HealthKitEntitlement.self,
++        HealthKitBackgroundDeliveryEntitlement.self,
+     ]
+ }
+ 
+@@ -168,3 +169,10 @@ public struct HealthKitEntitlement: Entitlement, RawRepresentable {
+     public var rawValue: Bool
+     public init(rawValue: Bool) { self.rawValue = rawValue }
+ }
++
++public struct HealthKitBackgroundDeliveryEntitlement: Entitlement, RawRepresentable {
++    public static let identifier = "com.apple.developer.healthkit.background-delivery"
++
++    public var rawValue: Bool
++    public init(rawValue: Bool) { self.rawValue = rawValue }
++}
+diff --git a/Tests/XToolTests/HealthKitEntitlementTests.swift b/Tests/XToolTests/HealthKitEntitlementTests.swift
+new file mode 100644
+index 0000000..193fa15
+--- /dev/null
++++ b/Tests/XToolTests/HealthKitEntitlementTests.swift
+@@ -0,0 +1,105 @@
++import Foundation
++import Testing
++@testable import XKit
++
++// Mirrors the entitlements HealthBridge ships with, plus a non-free entitlement
++// so we can assert the free-team filter still drops what it always dropped.
++private let entitlementsPlist = Data("""
++<?xml version="1.0" encoding="UTF-8"?>
++<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
++<plist version="1.0">
++<dict>
++    <key>com.apple.developer.healthkit</key>
++    <true/>
++    <key>com.apple.developer.healthkit.background-delivery</key>
++    <true/>
++    <key>aps-environment</key>
++    <string>development</string>
++</dict>
++</plist>
++""".utf8)
++
++private func decoded() throws -> Entitlements {
++    try PropertyListDecoder().decode(Entitlements.self, from: entitlementsPlist)
++}
++
++/// Reproduces the free-team path in `DeveloperServicesAddAppOperation.addApp`:
++/// filter to free-capable entitlements, then *re-assign* (which is what drops
++/// anything the decoder didn't recognize).
++private func applyFreeTeamFilter(_ entitlements: Entitlements) throws -> Entitlements {
++    let filtered = try entitlements.entitlements().filter { $0.anyCapability?.isFree != false }
++    return try Entitlements(entitlements: filtered)
++}
++
++private func identifiers(of entitlements: Entitlements) throws -> Set<String> {
++    Set(try entitlements.entitlements().map { type(of: $0).identifier })
++}
++
++@Test func healthKitEntitlementMapsToHealthKitCapability() {
++    let capability = HealthKitEntitlement(rawValue: true).capability
++    #expect(capability.capabilityType.value1 == .healthkit)
++    #expect(capability.isFree == true)
++    #expect(capability.settings == nil)
++}
++
++@Test func healthKitBackgroundDeliveryMapsToSameHealthKitCapability() {
++    let healthKit = HealthKitEntitlement(rawValue: true).capability
++    let backgroundDelivery = HealthKitBackgroundDeliveryEntitlement(rawValue: true).capability
++
++    #expect(backgroundDelivery.capabilityType.value1 == .healthkit)
++    #expect(backgroundDelivery.isFree == true)
++    // Same capability type as plain HealthKit, so `upsertApp` collapses the two
++    // entitlements into a single HEALTHKIT capability rather than registering twice.
++    #expect(backgroundDelivery.capabilityType == healthKit.capabilityType)
++    #expect(backgroundDelivery.settings == healthKit.settings)
++}
++
++@Test func backgroundDeliveryIsRecognizedWhenDecoding() throws {
++    let ids = try identifiers(of: decoded())
++    #expect(ids.contains("com.apple.developer.healthkit"))
++    #expect(ids.contains("com.apple.developer.healthkit.background-delivery"))
++}
++
++@Test func backgroundDeliverySurvivesFreeTeamFilter() throws {
++    let ids = try identifiers(of: applyFreeTeamFilter(decoded()))
++
++    // The regression this patch exists for: on a free/Personal Team the
++    // background-delivery entitlement must still be present after filtering.
++    #expect(ids.contains("com.apple.developer.healthkit.background-delivery"))
++    #expect(ids.contains("com.apple.developer.healthkit"))
++}
++
++@Test func freeTeamFilterCollapsesHealthKitToOneCapability() throws {
++    let capabilities = try applyFreeTeamFilter(decoded()).entitlements().compactMap(\.anyCapability)
++    let types = Set(capabilities.map(\.capabilityType))
++
++    #expect(capabilities.allSatisfy { $0.capabilityType.value1 == .healthkit })
++    #expect(types.count == 1)
++}
++
++@Test func unrelatedEntitlementBehaviorIsUnchanged() throws {
++    // aps-environment is a non-free capability and must still be filtered out
++    // for free teams, exactly as before the patch.
++    let pushCapability = APSEnvironmentEntitlement.development.capability
++    #expect(pushCapability.capabilityType.value1 == .pushNotifications)
++    #expect(pushCapability.isFree == false)
++
++    #expect(try identifiers(of: decoded()).contains("aps-environment"))
++    #expect(try !identifiers(of: applyFreeTeamFilter(decoded())).contains("aps-environment"))
++}
++
++@Test func unregisteredEntitlementIsStillIgnored() throws {
++    // Sanity check that we widened recognition by exactly one entitlement:
++    // a sibling HealthKit key we did *not* add stays unrecognized.
++    let plist = Data("""
++    <?xml version="1.0" encoding="UTF-8"?>
++    <plist version="1.0">
++    <dict>
++        <key>com.apple.developer.healthkit.recalibrate-estimates</key>
++        <true/>
++    </dict>
++    </plist>
++    """.utf8)
++    let entitlements = try PropertyListDecoder().decode(Entitlements.self, from: plist)
++    #expect(try entitlements.entitlements().isEmpty)
++}
