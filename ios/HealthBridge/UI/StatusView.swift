@@ -11,19 +11,30 @@ struct StatusView: View {
         NavigationStack {
             Form {
                 Section("Authorization") {
-                    LabeledContent("HealthKit", value: sync.status.authorized ? "Granted" : "Not authorized")
+                    LabeledContent("HealthKit", value: sync.status.authorized ? "Request completed" : "Request needed")
                     if !sync.status.authorized {
                         Button("Request authorization") { sync.requestAuthorization() }
                     }
                 }
 
                 Section("Background delivery") {
-                    LabeledContent("Observers", value: sync.status.backgroundDeliveryEnabled ? "Registered" : "Not registered")
+                    LabeledContent("Delivery", value: sync.status.backgroundDeliveryEnabled ? "Enabled" : "Not confirmed")
+                    if let error = sync.status.backgroundDeliveryError {
+                        LabeledContent("Delivery error", value: error)
+                    }
                 }
 
                 Section("Queue") {
                     LabeledContent("Pending batches", value: "\(sync.status.pendingCount)")
                     LabeledContent("In-flight batches", value: "\(sync.status.inflightCount)")
+                }
+
+                Section("Collection") {
+                    if let error = sync.status.lastSyncError {
+                        LabeledContent("Read / save error", value: error)
+                    } else {
+                        Text("No reported read / save error")
+                    }
                 }
 
                 Section("Upload") {

@@ -22,12 +22,9 @@ struct MetricAnchor: Codable, Equatable {
 final class AnchorStore {
     static let firstRunWindowSeconds: TimeInterval = 24 * 60 * 60
 
-    private enum StoreError: Error {
-        case corruption
-    }
-
     private let url: URL
     private var anchors: [String: MetricAnchor] = [:]
+    private var loadFailed = false
 
     init(url: URL) {
         self.url = url
@@ -45,9 +42,14 @@ final class AnchorStore {
     /// Persist a freshly read anchor for a type. Call ONLY after the newly read
     /// samples have been durably written to the Outbox ("durability before
     /// progress").
-    func update(typeCode: String, anchorData: Data, now: Date = Date()) {
-        anchors[typeCode] = MetricAnchor(typeCode: typeCode, data: anchorData, updatedAt: now)
-        save()
+    @discardableResult
+    func update(typeCode: String, anchorData: Data, now: Date = Date()) -> Bool {
+        guard reloadIfNeeded() else { return false }
+        var updated = anchors
+        updated[typeCode] = MetricAnchor(typeCode: typeCode, data: anchorData, updatedAt: now)
+        guard save(updated) else { return false }
+        anchors = updated
+        return true
     }
 
     /// Read-window policy for a type.
@@ -62,30 +64,36 @@ final class AnchorStore {
 
     private var storeURL: URL { url.appendingPathComponent("anchors.json") }
 
+    /// Never replace unreadable/corrupt bookmarks with an empty first-run state.
+    /// A locked-file failure may recover on unlock; corruption requires repair.
+    func reloadIfNeeded() -> Bool {
+        if loadFailed { load() }
+        return !loadFailed
+    }
+
     private func load() {
-        guard FileManager.default.fileExists(atPath: storeURL.path) else { return }
         do {
             let data = try Data(contentsOf: storeURL)
-            let decoded = try JSONDecoder().decode([String: MetricAnchor].self, from: data)
-            anchors = decoded
+            anchors = try JSONDecoder().decode([String: MetricAnchor].self, from: data)
+            loadFailed = false
+        } catch let error as NSError where error.domain == NSCocoaErrorDomain && error.code == NSFileReadNoSuchFileError {
+            loadFailed = false
         } catch {
-            // Quarantine instead of silently resetting every anchor to blank:
-            // a valid anchor must never be replaced by an empty one on decode
-            // failure (see design spec "Error handling > HealthKit").
-            anchors = [:]
-            // Surface a diagnostic rather than crash.
-            print("AnchorStore: failed to decode anchors — treating as empty (\(error))")
+            loadFailed = true
+            print("AnchorStore: cannot read anchors; collection paused (\(error))")
         }
     }
 
-    private func save() {
+    private func save(_ updated: [String: MetricAnchor]) -> Bool {
         let dir = url
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         do {
-            let data = try JSONEncoder().encode(anchors)
-            try data.write(to: storeURL, options: [.atomic])
+            let data = try JSONEncoder().encode(updated)
+            try data.write(to: storeURL, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+            return true
         } catch {
             print("AnchorStore: failed to persist anchors (\(error))")
+            return false
         }
     }
 }

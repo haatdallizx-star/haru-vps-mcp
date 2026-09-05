@@ -103,7 +103,9 @@ final class Uploader {
 
         send(request) { [weak self] data, response, error in
             let statusCode = (response as? HTTPURLResponse)?.statusCode
-            let outcome = UploadClassifier.classify(statusCode: statusCode, data: data)
+            let outcome = error == nil
+                ? UploadClassifier.classify(statusCode: statusCode, data: data)
+                : .retryable(statusCode: nil)
             self?.apply(outcome: outcome, batchID: batch.id)
             onFinish?(outcome)
         }

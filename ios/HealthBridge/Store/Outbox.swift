@@ -53,15 +53,18 @@ final class Outbox {
 
     /// Durable-write a batch into pending. This must happen BEFORE the HealthKit
     /// anchor is advanced ("durability before progress").
-    func enqueue(_ batch: OutboxBatch) {
+    @discardableResult
+    func enqueue(_ batch: OutboxBatch) -> Bool {
         let url = fileURL(batchID: batch.id, state: .pending)
         do {
             let data = try JSONEncoder().encode(batch)
-            try data.write(to: url, options: [.atomic])
+            try data.write(to: url, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+            return true
         } catch {
             // Never silently drop a record. Surface a diagnostic so the batch
             // can be recovered and the anchor is not advanced.
             print("Outbox: failed to enqueue batch \(batch.id): \(error)")
+            return false
         }
     }
 
@@ -92,16 +95,16 @@ final class Outbox {
         let src = fileURL(batchID: id, state: .inflight)
         let dest = fileURL(batchID: id, state: .pending)
         guard fm.fileExists(atPath: src.path) else { return }
-        try? fm.removeItem(at: dest)
         try? fm.moveItem(at: src, to: dest)   // atomic, safe on failure
     }
 
     /// On app launch: any batch left in inflight (app died mid-upload) is a
     /// safely retryable pending batch again.
-    func recoverInflightBatches() {
+    func recoverInflightBatches(excluding activeIDs: Set<UUID> = []) {
         let inflightDir = fileURLForState(.inflight)
         for file in (try? fm.contentsOfDirectory(at: inflightDir, includingPropertiesForKeys: nil)) ?? [] {
-            let id = batchID(from: file)
+            guard let id = UUID(uuidString: file.deletingPathExtension().lastPathComponent),
+                  !activeIDs.contains(id) else { continue }
             markFailed(id)
         }
     }
