@@ -10,6 +10,13 @@ The VPS server-side ingest service is a separate component living on the
 `healthkit-vps-ingest` branch (PR #1). This collector is an isolated, additive
 component under `ios/` and does **not** modify or redeploy that service.
 
+## Background upload follow-up (2026-09-05)
+
+See [the repair and validation status](healthkit-background-upload.md) for the
+file-based background transport, durability fixes, remaining reference gaps, and
+the required CI/device acceptance gates. The original Phase 2A notes below are
+historical and are not proof of current deployment or background behavior.
+
 ## Architecture
 
 ```

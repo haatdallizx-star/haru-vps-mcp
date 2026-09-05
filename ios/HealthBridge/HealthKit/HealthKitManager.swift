@@ -9,7 +9,20 @@ import HealthKit
 /// not unit-tested. Its correctness is covered by the entitlement gate in CI
 /// (build must contain healthkit + background-delivery) and the later real-device
 /// acceptance run.
-final class HealthKitManager: NSObject {
+struct AnchoredSamples {
+    let samples: [HealthSample]
+    let anchorData: Data
+}
+
+protocol HealthKitReading: AnyObject {
+    func requestReadAuthorization(completion: @escaping (Bool, Error?) -> Void)
+    func registerObservers(onFired: @escaping (HealthKitMetric, @escaping () -> Void) -> Void,
+                           onRegistration: @escaping (HealthKitMetric, Bool, Error?) -> Void)
+    func readAnchoredSamples(metric: HealthKitMetric, storedAnchorData: Data?, firstRunWindowStart: Date?,
+                             completion: @escaping (Result<AnchoredSamples, Error>) -> Void)
+}
+
+final class HealthKitManager: NSObject, HealthKitReading {
     static let shared = HealthKitManager()
 
     private let healthStore = HKHealthStore()
@@ -33,71 +46,81 @@ final class HealthKitManager: NSObject {
     ///
     /// On fire it hands the metric back to the caller (`onFired`), which owns the
     /// AnchorStore and decides how to run the anchored read (see `SyncEngine`).
-    func registerObservers(onFired: @escaping (HealthKitMetric) -> Void) {
+    private var observerQueries: [String: HKObserverQuery] = [:]
+
+    func registerObservers(
+        onFired: @escaping (HealthKitMetric, @escaping () -> Void) -> Void,
+        onRegistration: @escaping (HealthKitMetric, Bool, Error?) -> Void
+    ) {
         for metric in HealthKitMetrics.all {
-            guard let type = HKObjectType.quantityType(forIdentifier: HKQuantityTypeIdentifier(rawValue: metric.healthKitTypeIdentifier)) else { continue }
-
-            let query = HKObserverQuery(sampleType: type, predicate: nil) { _, completion, error in
-                // Invoked on new data and on a background relaunch.
-                if error == nil {
-                    onFired(metric)
-                }
-                completion()
+            guard let type = HKObjectType.quantityType(forIdentifier: HKQuantityTypeIdentifier(rawValue: metric.healthKitTypeIdentifier)) else {
+                onRegistration(metric, false, ReadError.unsupportedType)
+                continue
             }
-            healthStore.execute(query)
-
-            // Best supported frequency for this type.
-            healthStore.enableBackgroundDelivery(for: type, frequency: .immediate) { _, _ in }
+            if observerQueries[metric.typeCode] == nil {
+                let query = HKObserverQuery(sampleType: type, predicate: nil) { _, completion, _ in
+                    // Let the anchored read surface any error, and complete only
+                    // after that read and its durable queue write have settled.
+                    onFired(metric, completion)
+                }
+                observerQueries[metric.typeCode] = query
+                healthStore.execute(query)
+            }
+            healthStore.enableBackgroundDelivery(for: type, frequency: .immediate) { success, error in
+                onRegistration(metric, success, error)
+            }
         }
     }
 
-    /// Run an HKAnchoredObjectQuery for a metric starting from the stored anchor.
-    /// The caller supplies the stored anchor bytes and the first-run read window,
-    /// and receives encoded samples plus the new anchor. Callers must persist the
-    /// anchor ONLY after the samples are durably queued.
+    enum ReadError: Error {
+        case unsupportedType, invalidAnchor, missingResult
+    }
+
     func readAnchoredSamples(
         metric: HealthKitMetric,
         storedAnchorData: Data?,
         firstRunWindowStart: Date?,
-        onSamples: @escaping (HealthKitMetric, [HealthSample], Data) -> Void
+        completion: @escaping (Result<AnchoredSamples, Error>) -> Void
     ) {
-        guard let type = HKObjectType.quantityType(forIdentifier: HKQuantityTypeIdentifier(rawValue: metric.healthKitTypeIdentifier)) else { return }
+        guard let type = HKObjectType.quantityType(forIdentifier: HKQuantityTypeIdentifier(rawValue: metric.healthKitTypeIdentifier)) else {
+            completion(.failure(ReadError.unsupportedType))
+            return
+        }
         let unit = HKUnit(from: metric.hkUnitIdentifier)
-
         var predicate: NSPredicate?
         var anchor: HKQueryAnchor?
-        if let data = storedAnchorData, let unarchived = Self.unarchive(data) as? HKQueryAnchor {
-            anchor = unarchived
-        } else if let start = firstRunWindowStart {
+        if let data = storedAnchorData {
+            guard let decoded = Self.unarchive(data) as? HKQueryAnchor else {
+                completion(.failure(ReadError.invalidAnchor))
+                return
+            }
+            anchor = decoded
+        } else {
+            let start = firstRunWindowStart ?? Date().addingTimeInterval(-AnchorStore.firstRunWindowSeconds)
             predicate = HKQuery.predicateForSamples(withStart: start, end: nil, options: .strictStartDate)
         }
 
         let encoder = SampleEncoder(metric: metric)
-        let query = HKAnchoredObjectQuery(
-            type: type,
-            predicate: predicate,
-            anchor: anchor,
-            limit: HKObjectQueryNoLimit
-        ) { _, samples, _, newAnchor, error in
-            guard error == nil, let samples = samples, let newAnchor else { return }
-
+        let query = HKAnchoredObjectQuery(type: type, predicate: predicate, anchor: anchor, limit: HKObjectQueryNoLimit) { _, samples, _, newAnchor, error in
+            if let error { completion(.failure(error)); return }
+            guard let samples, let newAnchor, let anchorData = Self.archive(newAnchor) else {
+                completion(.failure(ReadError.missingResult))
+                return
+            }
             var encoded: [HealthSample] = []
             for case let quantitySample as HKQuantitySample in samples {
-                let value = quantitySample.quantity.doubleValue(for: unit)
-                let metadata = Self.allowListedMetadata(quantitySample.metadata)
                 encoded.append(encoder.makeSample(
                     uuid: quantitySample.uuid.uuidString,
-                    value: value,
+                    value: quantitySample.quantity.doubleValue(for: unit),
                     startAt: quantitySample.startDate,
                     endAt: quantitySample.endDate,
                     sourceName: quantitySample.sourceRevision.source.name,
                     sourceBundle: quantitySample.sourceRevision.source.bundleIdentifier,
                     device: self.sanitizedDeviceDescription(quantitySample),
-                    metadata: metadata
+                    metadata: Self.allowListedMetadata(quantitySample.metadata)
                 ))
             }
-            guard let anchorData = Self.archive(newAnchor) else { return }
-            onSamples(metric, encoded, anchorData)
+            completion(.success(AnchoredSamples(samples: encoded, anchorData: anchorData)))
         }
         healthStore.execute(query)
     }

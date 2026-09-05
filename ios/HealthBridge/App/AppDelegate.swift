@@ -13,6 +13,7 @@ final class AppDependencies {
     let anchorStore: AnchorStore
     let uploader: Uploader
     let sync: SyncEngine
+    let backgroundUploader: BackgroundUploader
 
     private init() {
         let base = FileManager.default
@@ -24,38 +25,17 @@ final class AppDependencies {
         anchorStore = AnchorStore(url: base.appendingPathComponent("anchors"))
         uploader = Uploader(outbox: outbox)
 
-        // NOTE: this must NOT be a background URLSession. A background session
-        // supports only upload/download tasks driven by a delegate; calling
-        // `dataTask(with:completionHandler:)` on one raises an uncatchable
-        // NSGenericException ("Completion handler blocks are not supported in
-        // background sessions") and kills the process on launch as soon as the
-        // outbox has anything to drain.
-        //
-        // Losing the out-of-process session is acceptable here: HealthKit
-        // background delivery still relaunches the app, and the outbox already
-        // treats an interrupted upload as retryable (`recoverInflightBatches`
-        // on launch), so a transfer cut short is retried rather than lost.
-        let uploadConfig = URLSessionConfiguration.default
-        uploadConfig.waitsForConnectivity = true
-        uploadConfig.timeoutIntervalForRequest = 30
-        let uploadSession = URLSession(configuration: uploadConfig)
-
-        sync = SyncEngine(
-            config: config,
-            outbox: outbox,
-            anchorStore: anchorStore,
-            uploader: uploader,
-            send: { request, complete in
-                let task = uploadSession.dataTask(with: request) { data, response, error in
-                    complete(data, response, error)
-                }
-                task.resume()
-            }
+        backgroundUploader = BackgroundUploader(
+            outbox: outbox, config: config,
+            bodyDirectory: base.appendingPathComponent("upload-bodies"),
+            transport: BackgroundURLSessionTransfer()
         )
+        sync = SyncEngine(config: config, outbox: outbox, anchorStore: anchorStore,
+                          uploader: uploader, backgroundUploader: backgroundUploader)
     }
 }
 
-/// Registers HealthKit observers and requests read authorization at launch. iOS
+/// Registers HealthKit observers at launch. Authorization is requested by the foreground scene. iOS
 /// relaunches the app for HealthKit events via the registered observers even when
 /// the UI is not opened, provided they are registered here in didFinishLaunching.
 final class AppDelegate: NSObject, UIApplicationDelegate {
@@ -66,7 +46,19 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
         sync.startBackgroundDelivery()
-        sync.requestAuthorization()
         return true
+    }
+
+    func application(_ application: UIApplication, handleEventsForBackgroundURLSession identifier: String,
+                     completionHandler: @escaping () -> Void) {
+        guard identifier == BackgroundURLSessionTransfer.identifier else {
+            completionHandler()
+            return
+        }
+        AppDependencies.shared.backgroundUploader.handleBackgroundEvents(completion: completionHandler)
+    }
+
+    func applicationProtectedDataDidBecomeAvailable(_ application: UIApplication) {
+        sync.manualSync()
     }
 }
