@@ -259,6 +259,9 @@ class HealthKitStore:
         accepted = 0
         duplicates = 0
         with self._connect() as conn:
+            # Lock before reading tombstones: concurrent writers must not insert
+            # a deletion between the check and the UUID claim.
+            conn.execute("BEGIN IMMEDIATE")
             # Tombstones win even when independent background tasks finish out of order.
             for deleted in batch.deleted_samples:
                 self._delete_sample(conn, deleted, received_text)

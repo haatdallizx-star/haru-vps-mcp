@@ -96,13 +96,42 @@ def test_invalid_menstrual_fields_rejected(extra):
 
 def test_legacy_registry_migrates_without_losing_sleep(tmp_path):
     store = store_at(tmp_path)
+    store.ingest(batch([sample("s", stage="rem")]), received_at=NOW)
+    original_status = store.status()
     with sqlite3.connect(store.path) as conn:
         conn.execute("DROP TABLE healthkit_sample_uuids")
         conn.execute("CREATE TABLE healthkit_sample_uuids (uuid TEXT PRIMARY KEY, sample_type TEXT NOT NULL CHECK(sample_type IN ('heart_rate','hrv','steps','sleep')))")
+        conn.execute("INSERT INTO healthkit_sample_uuids VALUES ('s', 'sleep')")
     store.initialize()
+    assert store.status() == original_status
+    with sqlite3.connect(store.path) as conn:
+        assert conn.execute("SELECT uuid, stage FROM healthkit_sleep_samples").fetchall() == [("s", "rem")]
     store.ingest(batch([sample("s", stage="rem"), sample("m", "menstrual_flow", flow="none")]), received_at=NOW)
     store.initialize()
     assert query_healthkit(store.path, kind="status")["total_samples"] == 2
+
+
+def test_tombstone_check_and_insert_hold_one_write_transaction(tmp_path, monkeypatch):
+    store = store_at(tmp_path)
+    original_claim = store._claim_uuid
+    checked = []
+
+    def claim_with_competing_writer(conn, **kwargs):
+        # This hook runs just after the tombstone check, before the first INSERT.
+        with sqlite3.connect(store.path, timeout=0.01) as competitor:
+            with pytest.raises(sqlite3.OperationalError, match="locked"):
+                competitor.execute("BEGIN IMMEDIATE")
+        checked.append(True)
+        return original_claim(conn, **kwargs)
+
+    monkeypatch.setattr(store, "_claim_uuid", claim_with_competing_writer)
+    record = sample("race", stage="core")
+    store.ingest(batch([record]), received_at=NOW)
+    assert checked == [True]
+    second_store = HealthKitStore(store.path)
+    second_store.ingest(batch(deleted=[dict(uuid="race", type="sleep")]), received_at=NOW)
+    second_store.ingest(batch([record]), received_at=NOW)
+    assert query(store, "samples", "sleep")["samples"] == []
 
 
 def test_cross_type_delete_rolls_back_whole_batch(tmp_path):
