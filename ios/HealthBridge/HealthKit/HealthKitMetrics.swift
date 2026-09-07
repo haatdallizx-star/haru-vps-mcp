@@ -1,13 +1,8 @@
 import Foundation
 
-/// One supported quantity metric and its server-contract encoding.
-///
-/// Phase 2A ships quantity samples only. Category metrics (sleep / menstrual /
-/// etc.) are intentionally excluded from this registry for now; add them here
-/// (plus a matching server-side type) when they are in scope. Keep the registry
-/// extensible: adding a metric is a single entry here plus the corresponding
-/// HealthKit reading in `HealthKitManager`.
+/// Supported quantity/category metrics and their server-contract codes.
 struct HealthKitMetric: Equatable {
+    var isCategory: Bool { typeCode == "sleep" || typeCode == "menstrual_flow" }
     /// HealthKit quantity-type identifier string, e.g. "HKQuantityTypeIdentifierHeartRate".
     let healthKitTypeIdentifier: String
     /// Server-contract type code, e.g. "heart_rate".
@@ -35,6 +30,10 @@ enum HealthKitMetrics {
             typeCode: "steps",
             canonicalUnit: "count",
             hkUnitIdentifier: "count"),
+        HealthKitMetric(healthKitTypeIdentifier: "HKCategoryTypeIdentifierSleepAnalysis",
+                        typeCode: "sleep", canonicalUnit: "", hkUnitIdentifier: ""),
+        HealthKitMetric(healthKitTypeIdentifier: "HKCategoryTypeIdentifierMenstrualFlow",
+                        typeCode: "menstrual_flow", canonicalUnit: "", hkUnitIdentifier: ""),
     ]
 
     static func metric(typeCode: String) -> HealthKitMetric? {

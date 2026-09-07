@@ -77,7 +77,7 @@ final class BackgroundUploader {
             do {
                 let envelope = IngestEnvelope(schemaVersion: IngestEnvelope.currentSchemaVersion,
                                               deviceId: DeviceIdentity.current(), sentAt: ISO8601Codec.string(Date()),
-                                              samples: batch.samples)
+                                              samples: batch.samples, deletedSamples: batch.deletedSamples)
                 let file = bodyURL(batch.id)
                 try FileManager.default.createDirectory(at: bodyDirectory, withIntermediateDirectories: true)
                 // Only the envelope is stored here, never the request/Authorization header.

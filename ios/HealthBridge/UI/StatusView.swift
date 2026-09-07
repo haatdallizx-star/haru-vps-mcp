@@ -30,6 +30,8 @@ struct StatusView: View {
                 }
 
                 Section("Collection") {
+                    Text("Heart rate · HRV · Steps · Sleep · Menstrual flow")
+                        .font(.caption)
                     if let error = sync.status.lastSyncError {
                         LabeledContent("Read / save error", value: error)
                     } else {

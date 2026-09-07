@@ -51,6 +51,12 @@ final class Outbox {
 
     // MARK: Enqueue
 
+    static func makeDeletionBatches(_ deleted: [DeletedHealthSample]) -> [OutboxBatch] {
+        stride(from: 0, to: deleted.count, by: maxBatchSamples).map { index in
+            OutboxBatch(samples: [], deletedSamples: Array(deleted[index..<min(index + maxBatchSamples, deleted.count)]))
+        }
+    }
+
     /// Durable-write a batch into pending. This must happen BEFORE the HealthKit
     /// anchor is advanced ("durability before progress").
     @discardableResult

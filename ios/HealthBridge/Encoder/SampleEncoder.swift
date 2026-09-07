@@ -6,6 +6,7 @@ import Foundation
 enum SampleEncodingPolicy {
     static let allowedMetadataKeys: Set<String> = [
         "HKWasUserEntered",
+        "HKTimeZone",
         "HKMetadataKeyHeartRateMotionContext",
     ]
 }
