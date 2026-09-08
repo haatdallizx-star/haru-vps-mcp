@@ -97,7 +97,8 @@ final class Uploader {
             schemaVersion: IngestEnvelope.currentSchemaVersion,
             deviceId: DeviceIdentity.current(),
             sentAt: ISO8601Codec.string(Date()),
-            samples: batch.samples
+            samples: batch.samples,
+            deletedSamples: batch.deletedSamples
         )
         let request = UploadRequestBuilder.build(endpoint: endpoint, envelope: envelope, token: token)
 

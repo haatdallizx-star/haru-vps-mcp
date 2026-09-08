@@ -11,6 +11,7 @@ struct MetricAnchor: Codable, Equatable {
     let typeCode: String
     let data: Data
     let updatedAt: Date
+    var queryStartAt: Date? = nil
 }
 
 /// Durable, per-metric anchor persistence, plus the first-run read-window policy.
@@ -43,10 +44,11 @@ final class AnchorStore {
     /// samples have been durably written to the Outbox ("durability before
     /// progress").
     @discardableResult
-    func update(typeCode: String, anchorData: Data, now: Date = Date()) -> Bool {
+    func update(typeCode: String, anchorData: Data, now: Date = Date(), queryStartAt: Date? = nil) -> Bool {
         guard reloadIfNeeded() else { return false }
         var updated = anchors
-        updated[typeCode] = MetricAnchor(typeCode: typeCode, data: anchorData, updatedAt: now)
+        updated[typeCode] = MetricAnchor(typeCode: typeCode, data: anchorData, updatedAt: now,
+                                        queryStartAt: anchors[typeCode]?.queryStartAt ?? queryStartAt)
         guard save(updated) else { return false }
         anchors = updated
         return true
@@ -56,8 +58,9 @@ final class AnchorStore {
     /// - Returns `nil` when an anchor exists (incremental read starts at the
     ///   anchor). Returns a 24-hour-ago start date on first run (no anchor).
     func readStartDate(for typeCode: String, now: Date = Date()) -> Date? {
-        guard !hasAnchor(for: typeCode) else { return nil }
-        return now.addingTimeInterval(-Self.firstRunWindowSeconds)
+        if let anchor = anchors[typeCode] { return anchor.queryStartAt }
+        let days: Double = typeCode == "sleep" ? 30 : (typeCode == "menstrual_flow" ? 90 : 1)
+        return now.addingTimeInterval(-days * Self.firstRunWindowSeconds)
     }
 
     // MARK: - Persistence (JSON, atomic)

@@ -6,10 +6,12 @@ struct OutboxBatch: Codable, Equatable {
     let id: UUID
     let samples: [HealthSample]
     let createdAt: Date
+    var deletedSamples: [DeletedHealthSample]? = nil
 
-    init(id: UUID = UUID(), samples: [HealthSample], createdAt: Date = Date()) {
+    init(id: UUID = UUID(), samples: [HealthSample], createdAt: Date = Date(), deletedSamples: [DeletedHealthSample] = []) {
         self.id = id
         self.samples = samples
         self.createdAt = createdAt
+        self.deletedSamples = deletedSamples.isEmpty ? nil : deletedSamples
     }
 }

@@ -113,13 +113,16 @@ final class SyncEngine: ObservableObject {
             return
         }
         reading.insert(key)
+        let queryStart = anchorStore.readStartDate(for: key)
         healthKit.readAnchoredSamples(metric: metric, storedAnchorData: anchorStore.anchor(for: key)?.data,
-                                     firstRunWindowStart: anchorStore.readStartDate(for: key)) { [weak self] result in
+                                     firstRunWindowStart: queryStart) { [weak self] result in
             DispatchQueue.main.async {
                 guard let self else { completion(); return }
                 switch result {
                 case .success(let read):
-                    self.didRead(metric: metric, samples: read.samples, newAnchorData: read.anchorData)
+                    self.didRead(metric: metric, samples: read.samples, newAnchorData: read.anchorData,
+                                 deletedSamples: read.deletedSamples,
+                                 queryStartAt: metric.isCategory ? queryStart : nil)
                 case .failure(let error):
                     self.recordSyncError("\(key): \(error.localizedDescription)", for: key)
                 }
@@ -135,15 +138,24 @@ final class SyncEngine: ObservableObject {
     /// No progress is committed until EVERY chunk has been saved successfully.
     /// A partial write is safe to replay: sample UUIDs survive and the server
     /// deduplicates retries. Disk failures remain visible separately from HTTP.
-    func didRead(metric: HealthKitMetric, samples: [HealthSample], newAnchorData: Data) {
-        for batch in Outbox.makeBatches(samples) {
+    func didRead(metric: HealthKitMetric, samples: [HealthSample], newAnchorData: Data,
+                 deletedSamples: [DeletedHealthSample] = [], queryStartAt: Date? = nil) {
+        for batch in Outbox.makeDeletionBatches(deletedSamples) + Outbox.makeBatches(samples) {
             guard outbox.enqueue(batch) else {
                 recordSyncError("Could not save \(metric.typeCode); read position was not advanced", for: metric.typeCode)
                 refreshStatus()
                 return
             }
         }
-        guard anchorStore.update(typeCode: metric.typeCode, anchorData: newAnchorData) else {
+        // An empty read can mean permission has not yet been granted. Do not
+        // consume the initial category history window before seeing any data.
+        if metric.isCategory && samples.isEmpty && !anchorStore.hasAnchor(for: metric.typeCode) {
+            recordSyncError(nil, for: metric.typeCode)
+            refreshStatus()
+            drainQueue()
+            return
+        }
+        guard anchorStore.update(typeCode: metric.typeCode, anchorData: newAnchorData, queryStartAt: queryStartAt) else {
             recordSyncError("Could not save read position; queued data is retained", for: metric.typeCode)
             refreshStatus()
             drainQueue()

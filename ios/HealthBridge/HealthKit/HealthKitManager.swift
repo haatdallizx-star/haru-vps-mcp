@@ -12,6 +12,7 @@ import HealthKit
 struct AnchoredSamples {
     let samples: [HealthSample]
     let anchorData: Data
+    var deletedSamples: [DeletedHealthSample] = []
 }
 
 protocol HealthKitReading: AnyObject {
@@ -28,13 +29,20 @@ final class HealthKitManager: NSObject, HealthKitReading {
     private let healthStore = HKHealthStore()
 
     func supportedQuantityTypes() -> [HKQuantityType] {
-        HealthKitMetrics.all.compactMap { metric in
+        HealthKitMetrics.all.filter { !$0.isCategory }.compactMap { metric in
             HKObjectType.quantityType(forIdentifier: HKQuantityTypeIdentifier(rawValue: metric.healthKitTypeIdentifier))
         }
     }
 
+    func sampleType(for metric: HealthKitMetric) -> HKSampleType? {
+        if metric.isCategory {
+            return HKObjectType.categoryType(forIdentifier: HKCategoryTypeIdentifier(rawValue: metric.healthKitTypeIdentifier))
+        }
+        return HKObjectType.quantityType(forIdentifier: HKQuantityTypeIdentifier(rawValue: metric.healthKitTypeIdentifier))
+    }
+
     func requestReadAuthorization(completion: @escaping (Bool, Error?) -> Void) {
-        let read = Set(supportedQuantityTypes().map { $0 as HKObjectType })
+        let read = Set(HealthKitMetrics.all.compactMap { sampleType(for: $0) as HKObjectType? })
         healthStore.requestAuthorization(toShare: [], read: read) { success, error in
             completion(success, error)
         }
@@ -53,7 +61,7 @@ final class HealthKitManager: NSObject, HealthKitReading {
         onRegistration: @escaping (HealthKitMetric, Bool, Error?) -> Void
     ) {
         for metric in HealthKitMetrics.all {
-            guard let type = HKObjectType.quantityType(forIdentifier: HKQuantityTypeIdentifier(rawValue: metric.healthKitTypeIdentifier)) else {
+            guard let type = sampleType(for: metric) else {
                 onRegistration(metric, false, ReadError.unsupportedType)
                 continue
             }
@@ -82,11 +90,11 @@ final class HealthKitManager: NSObject, HealthKitReading {
         firstRunWindowStart: Date?,
         completion: @escaping (Result<AnchoredSamples, Error>) -> Void
     ) {
-        guard let type = HKObjectType.quantityType(forIdentifier: HKQuantityTypeIdentifier(rawValue: metric.healthKitTypeIdentifier)) else {
+        guard let type = sampleType(for: metric) else {
             completion(.failure(ReadError.unsupportedType))
             return
         }
-        let unit = HKUnit(from: metric.hkUnitIdentifier)
+        let unit = metric.isCategory ? nil : HKUnit(from: metric.hkUnitIdentifier)
         var predicate: NSPredicate?
         var anchor: HKQueryAnchor?
         if let data = storedAnchorData {
@@ -95,13 +103,17 @@ final class HealthKitManager: NSObject, HealthKitReading {
                 return
             }
             anchor = decoded
+            if metric.isCategory, let start = firstRunWindowStart {
+                predicate = HKQuery.predicateForSamples(withStart: start, end: nil, options: [])
+            }
         } else {
             let start = firstRunWindowStart ?? Date().addingTimeInterval(-AnchorStore.firstRunWindowSeconds)
-            predicate = HKQuery.predicateForSamples(withStart: start, end: nil, options: .strictStartDate)
+            predicate = HKQuery.predicateForSamples(withStart: start, end: nil,
+                                                   options: metric.isCategory ? [] : .strictStartDate)
         }
 
         let encoder = SampleEncoder(metric: metric)
-        let query = HKAnchoredObjectQuery(type: type, predicate: predicate, anchor: anchor, limit: HKObjectQueryNoLimit) { _, samples, _, newAnchor, error in
+        let query = HKAnchoredObjectQuery(type: type, predicate: predicate, anchor: anchor, limit: HKObjectQueryNoLimit) { _, samples, deleted, newAnchor, error in
             if let error { completion(.failure(error)); return }
             guard let samples, let newAnchor, let anchorData = Self.archive(newAnchor) else {
                 completion(.failure(ReadError.missingResult))
@@ -109,6 +121,7 @@ final class HealthKitManager: NSObject, HealthKitReading {
             }
             var encoded: [HealthSample] = []
             for case let quantitySample as HKQuantitySample in samples {
+                guard let unit else { continue }
                 encoded.append(encoder.makeSample(
                     uuid: quantitySample.uuid.uuidString,
                     value: quantitySample.quantity.doubleValue(for: unit),
@@ -120,7 +133,18 @@ final class HealthKitManager: NSObject, HealthKitReading {
                     metadata: Self.allowListedMetadata(quantitySample.metadata)
                 ))
             }
-            completion(.success(AnchoredSamples(samples: encoded, anchorData: anchorData)))
+            for case let category as HKCategorySample in samples {
+                encoded.append(CategorySampleEncoder.makeSample(uuid: category.uuid.uuidString,
+                    typeCode: metric.typeCode, rawValue: category.value,
+                    startAt: category.startDate, endAt: category.endDate,
+                    sourceName: category.sourceRevision.source.name,
+                    sourceBundle: category.sourceRevision.source.bundleIdentifier,
+                    device: self.sanitizedDeviceDescription(category),
+                    metadata: Self.allowListedMetadata(category.metadata),
+                    cycleStart: category.metadata?[HKMetadataKeyMenstrualCycleStart] as? Bool))
+            }
+            completion(.success(AnchoredSamples(samples: encoded, anchorData: anchorData,
+                deletedSamples: (deleted ?? []).map { DeletedHealthSample(uuid: $0.uuid.uuidString, type: metric.typeCode) })))
         }
         healthStore.execute(query)
     }
@@ -136,7 +160,7 @@ final class HealthKitManager: NSObject, HealthKitReading {
         return result
     }
 
-    private func sanitizedDeviceDescription(_ sample: HKQuantitySample) -> String? {
+    private func sanitizedDeviceDescription(_ sample: HKSample) -> String? {
         // HealthKit device descriptions can contain identifiers we do not want to
         // forward; keep only the human-readable name/make/model tokens.
         guard let device = sample.device else { return nil }
